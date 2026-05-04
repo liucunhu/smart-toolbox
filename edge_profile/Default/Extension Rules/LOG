@@ -1,0 +1,4 @@
+2026/05/03-18:14:15.539 4390 Creating DB D:\code\smart-toolbox\edge_profile\Default\Extension Rules since it was missing.
+2026/05/03-18:14:15.559 4390 Reusing MANIFEST D:\code\smart-toolbox\edge_profile\Default\Extension Rules/MANIFEST-000001
+2026/05/03-18:14:15.560 4390 Recovering log #3
+2026/05/03-18:14:15.561 4390 Reusing old log D:\code\smart-toolbox\edge_profile\Default\Extension Rules/000003.log 

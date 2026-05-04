@@ -1,0 +1,4 @@
+2026/05/03-18:14:16.595 85b0 Creating DB D:\code\smart-toolbox\edge_profile\Default\shared_proto_db since it was missing.
+2026/05/03-18:14:16.631 85b0 Reusing MANIFEST D:\code\smart-toolbox\edge_profile\Default\shared_proto_db/MANIFEST-000001
+2026/05/03-18:14:16.634 85b0 Recovering log #3
+2026/05/03-18:14:16.637 85b0 Reusing old log D:\code\smart-toolbox\edge_profile\Default\shared_proto_db/000003.log 

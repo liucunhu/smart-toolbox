@@ -1,0 +1,37 @@
+{
+  "test_ab_001": {
+    "test_id": "test_ab_001",
+    "article_title": "Python编程教程",
+    "description": "测试不同风格的点击率",
+    "created_at": "2026-05-03T21:27:23.554630",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/ai_covers/test_a.jpg",
+        "style": "modern",
+        "description": "现代风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/ai_covers/test_b.jpg",
+        "style": "minimal",
+        "description": "极简风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 10,
+        "clicks": 3,
+        "ctr": 30.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 10,
+        "clicks": 5,
+        "ctr": 50.0,
+        "engagement_score": 0.0
+      }
+    }
+  }
+}

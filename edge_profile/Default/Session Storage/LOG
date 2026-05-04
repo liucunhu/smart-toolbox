@@ -1,0 +1,4 @@
+2026/05/03-18:14:16.471 9950 Creating DB D:\code\smart-toolbox\edge_profile\Default\Session Storage since it was missing.
+2026/05/03-18:14:16.791 9950 Reusing MANIFEST D:\code\smart-toolbox\edge_profile\Default\Session Storage/MANIFEST-000001
+2026/05/03-18:14:16.795 9950 Recovering log #3
+2026/05/03-18:14:16.844 9950 Reusing old log D:\code\smart-toolbox\edge_profile\Default\Session Storage/000003.log 

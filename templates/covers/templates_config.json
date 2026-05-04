@@ -1,0 +1,42 @@
+{
+  "tech_news": {
+    "name": "科技资讯",
+    "category": "科技",
+    "style": "modern",
+    "color_scheme": "科技蓝",
+    "layout": "title_center",
+    "description": "适合科技类文章，现代风格"
+  },
+  "finance_report": {
+    "name": "财经报道",
+    "category": "财经",
+    "style": "minimal",
+    "color_scheme": "简约黑",
+    "layout": "title_left",
+    "description": "适合财经类文章，极简风格"
+  },
+  "entertainment_hot": {
+    "name": "娱乐热点",
+    "category": "娱乐",
+    "style": "bold",
+    "color_scheme": "活力橙",
+    "layout": "title_bottom",
+    "description": "适合娱乐类文章，大胆风格"
+  },
+  "lifestyle_tips": {
+    "name": "生活技巧",
+    "category": "生活",
+    "style": "modern",
+    "color_scheme": "清新绿",
+    "layout": "title_center",
+    "description": "适合生活类文章，清新风格"
+  },
+  "education_guide": {
+    "name": "教育指南",
+    "category": "教育",
+    "style": "minimal",
+    "color_scheme": "优雅紫",
+    "layout": "title_top",
+    "description": "适合教育类文章，优雅风格"
+  }
+}

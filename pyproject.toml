@@ -1,0 +1,72 @@
+[project]
+name = "smart-toolbox"
+version = "1.0.1"
+description = "自媒体智能运营工具箱 - AI驱动的账号管理、内容创作和分发平台"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.109.0",
+    "uvicorn[standard]==0.27.0",
+    "sqlalchemy==2.0.25",
+    "pymysql==1.1.0",
+    "pydantic==2.5.3",
+    "pydantic-settings==2.1.0",
+    "celery==5.3.6",
+    "redis==5.0.1",
+    "playwright==1.40.0",
+    "openai==1.12.0",
+    "python-dotenv==1.0.0",
+    "loguru==0.7.2",
+    "passlib==1.7.4",
+    "bcrypt==4.1.2",
+    "python-jose[cryptography]==3.3.0",
+    "tenacity==8.2.3",
+    "nest-asyncio==1.6.0",
+]
+
+[tool.pytest.ini_options]
+# pytest 配置
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+]
+python_classes = [
+    "Test*",
+]
+python_functions = [
+    "test_*",
+]
+
+# 标记配置
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests",
+    "unit: marks tests as unit tests",
+]
+
+# asyncio 配置
+asyncio_mode = "auto"
+
+# 日志配置
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+# 警告过滤
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
