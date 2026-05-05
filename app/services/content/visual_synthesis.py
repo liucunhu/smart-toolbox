@@ -1,416 +1,499 @@
 """
-视觉爆款合成引擎
-完整实现：智能封面生成 + 情绪字幕系统 + 热门BGM匹配
+视觉合成服务（增强版）
+实现三格拼接封面、高饱和度人物特写封面、Ins风格滤镜
 """
-import cv2
-import numpy as np
-import ffmpeg
 import os
 import random
-from typing import Dict, List, Optional, Tuple
+import logging
+from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass
 from pathlib import Path
-from app.utils.logger import logger
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
+
+
+class CoverStyle:
+    """封面风格"""
+    DOUYIN_THREE_GRID = "douyin_three_grid"  # 抖音三格拼接
+    DOUYIN_PORTRAIT = "douyin_portrait"  # 抖音高饱和度人物特写
+    XIAOHONGSHU_INS = "xiaohongshu_ins"  # 小红书Ins风格
+
 
 class VisualSynthesisEngine:
-    """视觉爆款合成引擎"""
+    """视觉合成引擎"""
     
-    def __init__(self, output_dir: str = "output/visual"):
-        self.output_dir = output_dir
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # 平台封面规格配置
-        self.cover_specs = {
-            "douyin": {
-                "width": 1080,
-                "height": 1920,
-                "ratio": "9:16",
-                "style": "high_saturation",
-                "title_position": "center"
-            },
-            "xiaohongshu": {
-                "width": 1080,
-                "height": 1440,
-                "ratio": "3:4",
-                "style": "ins_style",
-                "title_position": "top"
-            },
-            "bilibili": {
-                "width": 1920,
-                "height": 1080,
-                "ratio": "16:9",
-                "style": "tech_style",
-                "title_position": "bottom"
-            },
-            "toutiao": {
-                "width": 1280,
-                "height": 720,
-                "ratio": "16:9",
-                "style": "news_style",
-                "title_position": "center"
-            }
-        }
-        
-        # 情绪字幕样式配置
-        self.emotion_styles = {
-            "positive": {
-                "color": (0, 255, 0),  # 绿色
-                "font_size": 60,
-                "thickness": 3,
-                "effect": "none"
-            },
-            "excited": {
-                "color": (0, 0, 255),  # 红色
-                "font_size": 80,
-                "thickness": 5,
-                "effect": "shake"
-            },
-            "neutral": {
-                "color": (255, 255, 255),  # 白色
-                "font_size": 50,
-                "thickness": 2,
-                "effect": "none"
-            },
-            "sad": {
-                "color": (128, 128, 128),  # 灰色
-                "font_size": 55,
-                "thickness": 2,
-                "effect": "fade"
-            }
-        }
+    def __init__(self):
+        pass
     
-    def generate_cover(self, video_path: str, platform: str, title: str = "") -> str:
+    def generate_three_grid_cover(
+        self,
+        input_path: str,
+        output_path: str,
+        title: str = ""
+    ) -> Dict[str, Any]:
         """
-        智能封面生成
-        :param video_path: 视频路径
-        :param platform: 目标平台
-        :param title: 封面标题
-        :return: 封面图片路径
+        生成三格拼接封面（抖音风格）
+        
+        Args:
+            input_path: 输入图片路径
+            output_path: 输出路径
+            title: 标题文字（可选）
+            
+        Returns:
+            Dict: 生成结果
         """
         try:
-            logger.info(f"开始生成 {platform} 平台封面: {video_path}")
+            # 加载图片
+            img = Image.open(input_path)
             
-            # 1. 提取关键帧
-            key_frames = self._extract_key_frames(video_path, count=5)
+            # 三格布局：左中右
+            w, h = img.size
             
-            if not key_frames:
-                raise ValueError("无法提取关键帧")
+            # 计算每格的宽度
+            grid_width = w // 3
             
-            # 2. 选择最佳帧（亮度+对比度+人脸检测）
-            best_frame = self._select_best_frame(key_frames)
+            # 创建三格封面
+            cover = Image.new('RGB', (w, h), color=(255, 255, 255))
             
-            # 3. 场景识别
-            scene_type = self._identify_scene(best_frame)
+            # 左格：原图裁剪
+            left = img.crop((0, 0, grid_width, h))
+            left = left.resize((grid_width, h), Image.Resampling.LANCZOS)
+            cover.paste(left, (0, 0))
             
-            # 4. 应用平台风格
-            styled_frame = self._apply_platform_style(best_frame, platform, scene_type)
+            # 中格：原图裁剪（带小偏移）
+            middle = img.crop((grid_width, 0, grid_width * 2, h))
+            middle = middle.resize((grid_width, h), Image.Resampling.LANCZOS)
+            cover.paste(middle, (grid_width, 0))
             
-            # 5. 添加标题文字
+            # 右格：原图裁剪
+            right = img.crop((grid_width * 2, 0, w, h))
+            right = right.resize((grid_width, h), Image.Resampling.LANCZOS)
+            cover.paste(right, (grid_width * 2, 0))
+            
+            # 添加分隔线
+            draw = ImageDraw.Draw(cover)
+            for i in range(1, 3):
+                x = i * grid_width
+                draw.line([(x, 0), (x, h)], fill=(0, 0, 0), width=2)
+            
+            # 添加标题
             if title:
-                styled_frame = self._add_title(styled_frame, title, platform)
+                self._add_title_to_cover(cover, title, style="bottom")
             
-            # 6. 保存封面
-            cover_path = os.path.join(
-                self.output_dir,
-                f"cover_{platform}_{os.path.basename(video_path).replace('.mp4', '.jpg')}"
-            )
-            cv2.imwrite(cover_path, styled_frame)
+            # 保存
+            cover.save(output_path, quality=95)
             
-            logger.info(f"封面生成成功: {cover_path}")
-            return cover_path
+            logger.info(f"✅ 三格拼接封面生成成功: {output_path}")
+            return {
+                "success": True,
+                "output_path": output_path,
+                "style": CoverStyle.DOUYIN_THREE_GRID,
+                "dimensions": cover.size
+            }
             
         except Exception as e:
-            logger.error(f"封面生成失败: {str(e)}")
-            raise
+            logger.error(f"生成三格拼接封面失败: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
     
-    def _extract_key_frames(self, video_path: str, count: int) -> List[np.ndarray]:
-        """提取视频关键帧"""
-        cap = cv2.VideoCapture(video_path)
+    def generate_portrait_cover(
+        self,
+        input_path: str,
+        output_path: str,
+        title: str = ""
+    ) -> Dict[str, Any]:
+        """
+        生成高饱和度人物特写封面（抖音风格）
         
-        if not cap.isOpened():
-            raise ValueError(f"无法打开视频: {video_path}")
-        
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        
-        # 均匀采样 + 随机采样
-        key_frames = []
-        sample_positions = []
-        
-        # 均匀分布
-        for i in range(count // 2):
-            pos = int((i + 1) * total_frames / (count // 2 + 1))
-            sample_positions.append(pos)
-        
-        # 随机采样
-        for _ in range(count // 2):
-            pos = random.randint(0, total_frames - 1)
-            sample_positions.append(pos)
-        
-        # 提取帧
-        for pos in sample_positions:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
-            ret, frame = cap.read()
-            if ret:
-                key_frames.append(frame)
-        
-        cap.release()
-        return key_frames
+        Args:
+            input_path: 输入图片路径
+            output_path: 输出路径
+            title: 标题文字
+            
+        Returns:
+            Dict: 生成结果
+        """
+        try:
+            # 加载图片
+            img = Image.open(input_path)
+            
+            # 调整为竖屏9:16
+            cover = self._adjust_aspect_ratio(img, 9, 16)
+            
+            # 提高饱和度
+            cover = self._enhance_saturation(cover, factor=1.5)
+            
+            # 提高对比度
+            cover = self._enhance_contrast(cover, factor=1.2)
+            
+            # 人物特写裁剪（中心裁剪）
+            cover = self._crop_center_portrait(cover)
+            
+            # 添加标题
+            if title:
+                self._add_title_to_cover(cover, title, style="center")
+            
+            # 保存
+            cover.save(output_path, quality=95)
+            
+            logger.info(f"✅ 人物特写封面生成成功: {output_path}")
+            return {
+                "success": True,
+                "output_path": output_path,
+                "style": CoverStyle.DOUYIN_PORTRAIT,
+                "dimensions": cover.size
+            }
+            
+        except Exception as e:
+            logger.error(f"生成人物特写封面失败: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
     
-    def _select_best_frame(self, frames: List[np.ndarray]) -> np.ndarray:
-        """选择最佳帧（基于亮度、对比度、清晰度）"""
-        best_score = -1
-        best_frame = None
+    def generate_ins_style_cover(
+        self,
+        input_path: str,
+        output_path: str,
+        title: str = ""
+    ) -> Dict[str, Any]:
+        """
+        生成Ins风格封面（小红书风格）
         
-        for frame in frames:
-            # 计算亮度
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            brightness = np.mean(gray)
+        Args:
+            input_path: 输入图片路径
+            output_path: 输出路径
+            title: 标题文字
             
-            # 计算对比度
-            contrast = np.std(gray)
+        Returns:
+            Dict: 生成结果
+        """
+        try:
+            # 加载图片
+            img = Image.open(input_path)
             
-            # 计算清晰度（Laplacian方差）
-            sharpness = cv2.Laplacian(gray, cv2.CV_64F).var()
+            # 调整为3:4竖屏
+            cover = self._adjust_aspect_ratio(img, 3, 4)
             
-            # 综合评分
-            score = brightness * 0.3 + contrast * 0.3 + sharpness * 0.4
+            # 应用Ins风格滤镜
+            cover = self._apply_ins_filter(cover)
             
-            if score > best_score:
-                best_score = score
-                best_frame = frame
-        
-        return best_frame
+            # 添加标题
+            if title:
+                self._add_title_to_cover(cover, title, style="ins")
+            
+            # 保存
+            cover.save(output_path, quality=95)
+            
+            logger.info(f"✅ Ins风格封面生成成功: {output_path}")
+            return {
+                "success": True,
+                "output_path": output_path,
+                "style": CoverStyle.XIAOHONGSHU_INS,
+                "dimensions": cover.size
+            }
+            
+        except Exception as e:
+            logger.error(f"生成Ins风格封面失败: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
     
-    def _identify_scene(self, frame: np.ndarray) -> str:
-        """场景识别（简化版）"""
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    def _adjust_aspect_ratio(
+        self,
+        img: Image.Image,
+        target_ratio_w: int,
+        target_ratio_h: int
+    ) -> Image.Image:
+        """
+        调整宽高比
         
-        # 计算颜色分布
-        avg_color = np.mean(frame, axis=(0, 1))
+        Args:
+            img: 图片对象
+            target_ratio_w: 目标宽高比分子
+            target_ratio_h: 目标宽高比分母
+            
+        Returns:
+            Image.Image: 调整后的图片
+        """
+        w, h = img.size
+        current_ratio = w / h
+        target_ratio = target_ratio_w / target_ratio_h
         
-        # 判断场景类型
-        if np.mean(gray) > 180:
-            return "bright"  # 明亮场景
-        elif np.mean(gray) < 80:
-            return "dark"    # 暗场景
-        elif avg_color[2] > avg_color[1] and avg_color[2] > avg_color[0]:
-            return "warm"    # 暖色调
+        if current_ratio > target_ratio:
+            # 太宽，裁剪宽度
+            new_w = int(h * target_ratio)
+            x_offset = (w - new_w) // 2
+            img = img.crop((x_offset, 0, x_offset + new_w, h))
         else:
-            return "cool"    # 冷色调
+            # 太高，裁剪高度
+            new_h = int(w / target_ratio)
+            y_offset = (h - new_h) // 2
+            img = img.crop((0, y_offset, w, y_offset + new_h))
+        
+        return img
     
-    def _apply_platform_style(self, frame: np.ndarray, platform: str, scene_type: str) -> np.ndarray:
-        """应用平台风格"""
-        spec = self.cover_specs[platform]
-        
-        # 调整尺寸
-        frame = cv2.resize(frame, (spec["width"], spec["height"]))
-        
-        # 应用风格滤镜
-        if spec["style"] == "high_saturation":
-            # 抖音：高饱和度
-            frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=10)
-        
-        elif spec["style"] == "ins_style":
-            # 小红书：ins风格（降低对比度，提高亮度）
-            frame = cv2.convertScaleAbs(frame, alpha=0.9, beta=20)
-            # 添加白色边框
-            frame = cv2.copyMakeBorder(frame, 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=(255, 255, 255))
-        
-        elif spec["style"] == "tech_style":
-            # B站：科技风格（提高对比度）
-            frame = cv2.convertScaleAbs(frame, alpha=1.3, beta=0)
-        
-        elif spec["style"] == "news_style":
-            # 头条：新闻风格（降低饱和度）
-            frame = cv2.convertScaleAbs(frame, alpha=0.8, beta=0)
-        
-        return frame
-    
-    def _add_title(self, frame: np.ndarray, title: str, platform: str) -> np.ndarray:
-        """添加标题文字"""
-        spec = self.cover_specs[platform]
-        height, width = frame.shape[:2]
-        
-        # 字体配置
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 1.5
-        font_thickness = 3
-        font_color = (255, 255, 255)
-        bg_color = (0, 0, 0)
-        
-        # 计算文字位置
-        if spec["title_position"] == "center":
-            x = width // 2
-            y = height // 2
-        elif spec["title_position"] == "top":
-            x = width // 2
-            y = 150
-        else:  # bottom
-            x = width // 2
-            y = height - 150
-        
-        # 获取文字尺寸
-        (text_width, text_height), _ = cv2.getTextSize(title, font, font_scale, font_thickness)
-        
-        # 绘制背景矩形
-        padding = 20
-        cv2.rectangle(
-            frame,
-            (x - text_width // 2 - padding, y - text_height - padding),
-            (x + text_width // 2 + padding, y + padding),
-            bg_color,
-            -1
-        )
-        
-        # 绘制文字（居中）
-        text_x = x - text_width // 2
-        text_y = y
-        cv2.putText(frame, title, (text_x, text_y), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
-        
-        return frame
-    
-    def add_emotional_subtitles(self, video_path: str, subtitles: List[Dict]) -> str:
+    def _enhance_saturation(
+        self,
+        img: Image.Image,
+        factor: float = 1.3
+    ) -> Image.Image:
         """
-        添加情绪字幕
-        :param video_path: 视频路径
-        :param subtitles: 字幕列表 [{"text": "...", "start": 0.0, "end": 2.0, "emotion": "excited"}]
-        :return: 输出视频路径
+        增强饱和度
+        
+        Args:
+            img: 图片对象
+            factor: 饱和度因子
+            
+        Returns:
+            Image.Image: 增强后的图片
         """
+        from PIL import ImageEnhance
+        
+        enhancer = ImageEnhance.Color(img)
+        return enhancer.enhance(factor)
+    
+    def _enhance_contrast(
+        self,
+        img: Image.Image,
+        factor: float = 1.2
+    ) -> Image.Image:
+        """
+        增强对比度
+        
+        Args:
+            img: 图片对象
+            factor: 对比度因子
+            
+        Returns:
+            Image.Image: 增强后的图片
+        """
+        from PIL import ImageEnhance
+        
+        enhancer = ImageEnhance.Contrast(img)
+        return enhancer.enhance(factor)
+    
+    def _crop_center_portrait(
+        self,
+        img: Image.Image
+    ) -> Image.Image:
+        """
+        中心裁剪为人物特写
+        
+        Args:
+            img: 图片对象
+            
+        Returns:
+            Image.Image: 裁剪后的图片
+        """
+        w, h = img.size
+        
+        # 人物特写：裁剪中心60%区域
+        crop_width = int(w * 0.6)
+        crop_height = int(h * 0.6)
+        
+        x_offset = (w - crop_width) // 2
+        y_offset = (h - crop_height) // 2
+        
+        return img.crop((x_offset, y_offset, x_offset + crop_width, y_offset + crop_height))
+    
+    def _apply_ins_filter(
+        self,
+        img: Image.Image
+    ) -> Image.Image:
+        """
+        应用Ins风格滤镜
+        
+        Args:
+            img: 图片对象
+            
+        Returns:
+            Image.Image: 滤镜后的图片
+        """
+        # 转换为OpenCV格式
+        cv_img = np.array(img)
+        cv_img = cv2.cvtColor(cv_img, cv2.COLOR_RGB2BGR)
+        
+        # 1. 轻微降低饱和度
+        hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+        hsv[:, :, 1] = hsv[:, :, 1] * 0.9  # 降低饱和度
+        cv_img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+        
+        # 2. 添加轻微暖色调
+        cv_img[:, :, 0] = cv_img[:, :, 0] * 1.05  # 红色通道增强
+        cv_img[:, :, 2] = cv_img[:, :, 2] * 0.95  # 蓝色通道降低
+        
+        # 3. 轻微锐化
+        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        cv_img = cv2.filter2D(cv_img, -1, kernel)
+        
+        # 4. 转回PIL格式
+        img = Image.fromarray(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB))
+        
+        return img
+    
+    def _add_title_to_cover(
+        self,
+        img: Image.Image,
+        title: str,
+        style: str = "center"
+    ):
+        """
+        添加标题到封面
+        
+        Args:
+            img: 图片对象
+            title: 标题文字
+            style: 风格（center/bottom/ins）
+        """
+        draw = ImageDraw.Draw(img)
+        w, h = img.size
+        
+        # 字体大小
+        font_size = max(20, int(w * 0.08))
+        
         try:
-            logger.info(f"开始添加情绪字幕: {video_path}")
-            
-            # 简化版：使用FFmpeg添加字幕
-            output_path = os.path.join(
-                self.output_dir,
-                f"subtitle_{os.path.basename(video_path)}"
-            )
-            
-            # 生成SRT字幕文件
-            srt_path = self._generate_srt_file(subtitles)
-            
-            # FFmpeg添加字幕
-            stream = ffmpeg.input(video_path)
-            subtitle_stream = ffmpeg.input(srt_path)
-            
-            out = ffmpeg.output(
-                stream.video,
-                stream.audio,
-                subtitle_stream,
-                output_path,
-                vcodec='copy',
-                acodec='copy',
-                scodec='mov_text'
-            )
-            
-            ffmpeg.run(out, overwrite_output=True, quiet=True)
-            
-            logger.info(f"情绪字幕添加成功: {output_path}")
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"情绪字幕添加失败: {str(e)}")
-            raise
-    
-    def _generate_srt_file(self, subtitles: List[Dict]) -> str:
-        """生成SRT字幕文件"""
-        srt_path = os.path.join(self.output_dir, "subtitles.srt")
+            font = ImageFont.truetype("arialbd.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
         
-        with open(srt_path, 'w', encoding='utf-8') as f:
-            for i, sub in enumerate(subtitles):
-                # 时间格式转换
-                start = self._seconds_to_srt_time(sub["start"])
-                end = self._seconds_to_srt_time(sub["end"])
-                
-                f.write(f"{i + 1}\n")
-                f.write(f"{start} --> {end}\n")
-                f.write(f"{sub['text']}\n\n")
+        # 计算文本位置
+        text_bbox = draw.textbbox((0, 0), title, font=font)
+        text_w = text_bbox[2] - text_bbox[0]
+        text_h = text_bbox[3] - text_bbox[1]
         
-        return srt_path
+        if style == "center":
+            # 居中显示
+            x = (w - text_w) // 2
+            y = (h - text_h) // 2
+            
+            # 绘制文字阴影
+            shadow_offset = 2
+            draw.text((x + shadow_offset, y + shadow_offset), title, 
+                   font=font, fill=(0, 0, 0))
+            
+            # 绘制主文字
+            draw.text((x, y), title, font=font, fill=(255, 255, 255))
+            
+        elif style == "bottom":
+            # 底部显示
+            x = (w - text_w) // 2
+            y = h - text_h - 20
+            
+            # 绘制背景框
+            padding = 10
+            draw.rectangle([x - padding, y - padding,
+                          x + text_w + padding, y + text_h + padding],
+                         fill=(0, 0, 0, 180))
+            
+            # 绘制文字
+            draw.text((x, y), title, font=font, fill=(255, 255, 255))
+            
+        elif style == "ins":
+            # Ins风格：顶部显示，使用大字
+            font_size = int(w * 0.12)
+            try:
+                font = ImageFont.truetype("arialbd.ttf", font_size)
+            except:
+                font = ImageFont.load_default()
+            
+            x = 20
+            y = 20
+            
+            # 绘制半透明背景
+            padding = 15
+            bg_img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+            bg_draw = ImageDraw.Draw(bg_img)
+            bg_draw.rectangle([x, y, x + text_w + padding * 2, y + text_h + padding * 2],
+                          fill=(0, 0, 0, 100))
+            
+            # 合成背景
+            img = Image.alpha_composite(img.convert('RGBA'), bg_img).convert('RGB')
+            draw = ImageDraw.Draw(img)
+            
+            # 绘制文字
+            draw.text((x + padding, y + padding), title, font=font, fill=(255, 255, 255))
     
-    def _seconds_to_srt_time(self, seconds: float) -> str:
-        """秒数转换为SRT时间格式"""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        millisecs = int((seconds % 1) * 1000)
-        
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
-    
-    def match_bgm(self, video_path: str, platform: str) -> str:
+    def batch_generate_covers(
+        self,
+        input_paths: List[str],
+        output_dir: str,
+        style: CoverStyle = CoverStyle.DOUYIN_PORTRAIT,
+        titles: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """
-        热门BGM匹配
-        :param video_path: 视频路径
-        :param platform: 目标平台
-        :return: 添加BGM后的视频路径
+        批量生成封面
+        
+        Args:
+            input_paths: 输入图片路径列表
+            output_dir: 输出目录
+            style: 封面风格
+            titles: 标题列表
+            
+        Returns:
+            List[Dict]: 生成结果列表
         """
-        try:
-            logger.info(f"开始匹配BGM: {video_path}")
-            
-            # 简化版：添加默认BGM
-            output_path = os.path.join(
-                self.output_dir,
-                f"bgm_{os.path.basename(video_path)}"
-            )
-            
-            # 实际应从BGM库中选择匹配的音频
-            # 这里使用FFmpeg添加音频轨道
-            stream = ffmpeg.input(video_path)
-            
-            out = ffmpeg.output(
-                stream.video,
-                stream.audio,
-                output_path,
-                vcodec='copy',
-                acodec='aac',
-                ar=44100,
-                ab='128k'
-            )
-            
-            ffmpeg.run(out, overwrite_output=True, quiet=True)
-            
-            logger.info(f"BGM匹配成功: {output_path}")
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"BGM匹配失败: {str(e)}")
-            raise
-    
-    def analyze_video_rhythm(self, video_path: str) -> Dict:
-        """分析视频节奏（用于BGM匹配）"""
-        cap = cv2.VideoCapture(video_path)
+        os.makedirs(output_dir, exist_ok=True)
+        results = []
         
-        if not cap.isOpened():
-            raise ValueError(f"无法打开视频: {video_path}")
-        
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        # 检测场景切换点
-        cut_points = []
-        prev_frame = None
-        
-        for i in range(0, total_frames, int(fps)):  # 每秒检测一次
-            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
-            ret, frame = cap.read()
-            
-            if not ret:
-                break
-            
-            if prev_frame is not None:
-                # 计算帧差异
-                diff = cv2.absdiff(prev_frame, frame)
-                diff_score = np.sum(diff) / (frame.shape[0] * frame.shape[1])
+        for i, input_path in enumerate(input_paths):
+            try:
+                # 生成输出路径
+                input_path_obj = Path(input_path)
+                output_filename = f"{input_path_obj.stem}_{style.value}{input_path_obj.suffix}"
+                output_path = os.path.join(output_dir, output_filename)
                 
-                if diff_score > 30:  # 阈值检测场景切换
-                    cut_points.append(i / fps)
-            
-            prev_frame = frame
+                # 选择标题
+                title = titles[i] if titles and i < len(titles) else ""
+                
+                # 根据风格生成封面
+                if style == CoverStyle.DOUYIN_THREE_GRID:
+                    result = self.generate_three_grid_cover(input_path, output_path, title)
+                elif style == CoverStyle.DOUYIN_PORTRAIT:
+                    result = self.generate_portrait_cover(input_path, output_path, title)
+                elif style == CoverStyle.XIAOHONGSHU_INS:
+                    result = self.generate_ins_style_cover(input_path, output_path, title)
+                else:
+                    result = {
+                        "success": False,
+                        "error": f"不支持的风格: {style}"
+                    }
+                
+                results.append(result)
+                
+            except Exception as e:
+                logger.error(f"处理 {input_path} 失败: {e}")
+                results.append({
+                    "success": False,
+                    "input_path": input_path,
+                    "error": str(e)
+                })
         
-        cap.release()
+        success_count = sum(1 for r in results if r.get("success"))
+        logger.info(f"✅ 批量生成封面完成: {success_count}/{len(input_paths)} 成功")
         
-        return {
-            "fps": fps,
-            "duration": total_frames / fps,
-            "cut_points": cut_points,
-            "rhythm_score": len(cut_points) / (total_frames / fps)  # 节奏分数
-        }
+        return results
+
+
+# 创建全局视觉合成引擎实例
+_visual_synthesis_engine = None
+
+
+def get_visual_synthesis_engine() -> VisualSynthesisEngine:
+    """
+    获取视觉合成引擎实例（单例模式）
+    
+    Returns:
+        VisualSynthesisEngine: 视觉合成引擎实例
+    """
+    global _visual_synthesis_engine
+    if _visual_synthesis_engine is None:
+        _visual_synthesis_engine = VisualSynthesisEngine()
+    return _visual_synthesis_engine

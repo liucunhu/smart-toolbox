@@ -66,7 +66,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { WarningFilled, Delete } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 
 interface AccountData {
   id: number
@@ -95,8 +95,8 @@ const handleDelete = async () => {
 
   deleting.value = true
   try {
-    const response = await axios.delete(
-      `http://localhost:8000/api/v1/accounts/${accountData.value.id}`
+    const response = await apiClient.delete(
+      `/accounts/${accountData.value.id}`
     )
 
     if (response.data.status === 'success') {

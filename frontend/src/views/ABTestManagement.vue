@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="ab-test-management">
     <el-row :gutter="20">
       <!-- 创建A/B测试 -->
@@ -164,7 +164,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -222,7 +222,7 @@ const createTest = async () => {
 
   creating.value = true
   try {
-    const response = await axios.post(`${API_BASE_URL}/content/ab-test/create`, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/ab-test/create`, {
       test_id: testForm.value.test_id,
       article_title: testForm.value.article_title,
       cover_variants: testForm.value.cover_variants,
@@ -258,7 +258,7 @@ const createTest = async () => {
 const fetchTests = async () => {
   loading.value = true
   try {
-    const response = await axios.get(`${API_BASE_URL}/content/ab-tests`)
+    const response = await apiClient.get(`${API_BASE_URL}/content/ab-tests`)
     tests.value = response.data.tests || []
   } catch (error) {
     console.error('获取测试列表失败:', error)
@@ -271,7 +271,7 @@ const fetchTests = async () => {
 // 查看结果
 const viewResults = async (test: any) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/content/ab-test/${test.test_id}`)
+    const response = await apiClient.get(`${API_BASE_URL}/content/ab-test/${test.test_id}`)
     currentResults.value = response.data
     resultsVisible.value = true
   } catch (error) {
@@ -289,7 +289,7 @@ const endTest = async (testId: string) => {
       type: 'warning'
     })
 
-    const response = await axios.post(`${API_BASE_URL}/content/ab-test/${testId}/end`)
+    const response = await apiClient.post(`${API_BASE_URL}/content/ab-test/${testId}/end`)
     
     if (response.data.status === 'success') {
       ElMessage.success('测试已结束')

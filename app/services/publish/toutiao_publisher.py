@@ -42,6 +42,9 @@ class ToutiaoPublisher:
         import subprocess
         import os
         
+        # ★★★ 标记为CDP模式 ★★★
+        self._is_cdp_mode = True
+        
         logger.info("🚀 使用CDP模式连接真实Edge浏览器...")
         
         edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
@@ -54,34 +57,47 @@ class ToutiaoPublisher:
         # 步骤1：启动Edge浏览器（带远程调试）
         logger.info(f"[1/3] 启动Edge浏览器（远程调试端口 {cdp_port}）...")
         
-        # 先关闭已有的Edge
+        # ★★★ 关键修复：不关闭所有Edge进程，只检查CDP端口是否可用 ★★★
+        import socket
+        cdp_available = False
         try:
-            subprocess.run("taskkill /F /IM msedge.exe", shell=True, capture_output=True, timeout=5)
-            await asyncio.sleep(2)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('127.0.0.1', cdp_port))
+            if result == 0:
+                cdp_available = True
+                logger.info(f"   ⚠️  CDP端口 {cdp_port} 已被占用，尝试复用现有浏览器")
+            sock.close()
         except:
             pass
         
-        # 启动带远程调试的Edge
-        user_data_dir = "./edge_profile_toutiao_cdp"
-        cmd = [
-            edge_path,
-            f'--remote-debugging-port={cdp_port}',
-            f'--user-data-dir={user_data_dir}',
-            'https://mp.toutiao.com/'
-        ]
-        
-        process = subprocess.Popen(cmd)
-        logger.info("✅ Edge浏览器已启动")
-        logger.info("   等待浏览器完全启动...")
-        await asyncio.sleep(5)
+        if not cdp_available:
+            # 只有当CDP端口未被占用时，才启动新浏览器
+            logger.info(f"   启动新的Edge浏览器实例...")
+            
+            # 启动带远程调试的Edge
+            user_data_dir = "./edge_profile_toutiao_cdp"
+            cmd = [
+                edge_path,
+                f'--remote-debugging-port={cdp_port}',
+                f'--user-data-dir={user_data_dir}',
+                'https://mp.toutiao.com/'
+            ]
+            
+            process = subprocess.Popen(cmd)
+            logger.info("✅ Edge浏览器已启动")
+            logger.info("   等待浏览器完全启动...")
+            await asyncio.sleep(5)
+        else:
+            logger.info("   ✅ 使用现有的Edge浏览器实例")
         
         # 步骤2：连接到Edge浏览器
         logger.info(f"[2/3] 连接到Edge浏览器（CDP端口 {cdp_port}）...")
-        
+                
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
-        
-        # 获取第一个context和page
+                
+        # 获取第一个context
         contexts = self.browser.contexts
         if not contexts:
             self.context = await self.browser.new_context(
@@ -91,19 +107,21 @@ class ToutiaoPublisher:
             )
         else:
             self.context = contexts[0]
-        
-        pages = self.context.pages
-        if pages:
-            self.page = pages[0]
-        else:
-            self.page = await self.context.new_page()
-        
+                
+        # ★★★ 关键修复：始终创建新标签页，避免并发冲突 ★★★
+        logger.info("   📑 创建新的标签页...")
+        self.page = await self.context.new_page()
+        logger.info(f"   ✅ 新标签页已创建")
+                
         logger.info("✅ 已连接到真实Edge浏览器")
         logger.info(f"   当前URL: {self.page.url}")
         logger.info("[3/3] CDP连接完成！")
     
     async def initialize_standard_browser(self):
         """初始化标准浏览器（原有逻辑）"""
+        # ★★★ 标记为非CDP模式 ★★★
+        self._is_cdp_mode = False
+        
         self.playwright = await async_playwright().start()
         
         # ★★★ 头条发布页面使用微前端架构，必须使用 Edge 浏览器才能完整加载
@@ -525,7 +543,8 @@ class ToutiaoPublisher:
         cover_style: str = "modern",
         use_template: str = None,
         enable_ab_test: bool = False,
-        declaration_type: str = "ai",  # 新增参数：声明类型，"ai"=引用AI, "personal_opinion"=仅个人观点
+        declaration_type: str = "ai",  # 新增参数：声明类型，"ai"=引用ai, "personal_opinion"=仅个人观点（已废弃，改用declarations）
+        declarations: list = None,  # ✅ 新增参数：作品声明列表（多选）
         article_images: list = None  # 新增参数：文章配图路径列表
     ) -> Dict[str, Any]:
         """
@@ -637,26 +656,206 @@ class ToutiaoPublisher:
             
             logger.info(f"发布页面已加载，当前URL: {current_url}")
 
-            # 2. 填写标题
-            title_input = await self.page.query_selector('input[placeholder="请输入标题"]')
-            if not title_input:
-                title_input = await self.page.query_selector('textarea[placeholder*="标题"]')
+            # ★★★ [步骤1/6] 先生成并上传封面图（参考成功测试脚本）★★★
+            logger.info("📦 [步骤1/6] 开始处理封面图...")
+            try:
+                # 如果需要自动生成封面图
+                if auto_generate_cover and not cover_image_path:
+                    logger.info("🤖 开始AI生成封面图...")
+                    
+                    # 优先使用硅基流动生成真实AI图像
+                    try:
+                        from app.services.content.image_generator import ImageGenerator
+                        image_gen = ImageGenerator()
+                        
+                        prompt = f"{title}, {category}, 高质量专业摄影, 视觉冲击力强, 色彩鲜明, 构图精美, 4K超高清, 引人注目"
+                        logger.info(f"   使用硅基流动生成封面图...")
+                        logger.info(f"   提示词: {prompt}")
+                        
+                        result = await image_gen.generate_image(
+                            prompt=prompt,
+                            aspect_ratio="16:9",
+                            provider="siliconflow"
+                        )
+                        
+                        if result.get("status") == "success":
+                            cover_image_path = result.get("image_path")
+                            logger.info(f"✅ 硅基流动封面图生成成功!")
+                            logger.info(f"   图片路径: {cover_image_path}")
+                        else:
+                            logger.warning(f"⚠️  硅基流动生成失败: {result.get('error')}")
+                            raise Exception("硅基流动生成失败")
+                    except Exception as e:
+                        logger.warning(f"硅基流动生成异常: {e}，降级使用LLM+PIL...")
+                        
+                        # 降级方案：LLM智能分析+PIL绘制
+                        try:
+                            from app.services.content.llm_cover_generator import get_llm_cover_generator
+                            llm_generator = get_llm_cover_generator()
+                            
+                            result = llm_generator.generate_cover_with_llm_analysis(
+                                title=title,
+                                content=content,
+                                category=category,
+                                style_override=cover_style if cover_style else None
+                            )
+                            
+                            if result["status"] == "success":
+                                cover_image_path = result["file_path"]
+                                design_plan = result.get("design_plan", {})
+                                logger.info(f"✅ LLM智能封面生成成功(PIL绘制)!")
+                                logger.info(f"   视觉风格: {design_plan.get('visual_style', 'N/A')}")
+                                logger.info(f"   配色方案: {design_plan.get('color_scheme', 'N/A')}")
+                            else:
+                                raise Exception("LLM封面生成失败")
+                        except Exception as e2:
+                            logger.warning(f"LLM封面生成也失败: {e2}")
+                            logger.info("   使用传统模板生成...")
+                            from app.services.content.ai_cover_generator import AICoverGenerator
+                            generator = AICoverGenerator()
+                            ai_result = generator.generate_cover(
+                                title=title,
+                                subtitle="",
+                                category=category,
+                                style=cover_style or "modern"
+                            )
+                            if ai_result["status"] == "success":
+                                cover_image_path = ai_result["file_path"]
+                                logger.info(f"✅ 传统AI封面生成成功: {ai_result['style']} 风格")
+                            else:
+                                logger.error(f"❌ 所有封面生成方案均失败: {ai_result.get('error')}")
+                                cover_image_path = None
+                
+                # 如果有封面图，现在上传
+                if cover_image_path:
+                    logger.info(f"📸 开始上传封面图: {cover_image_path}")
+                    
+                    # 压缩封面图
+                    from app.utils.image_processor import compress_image
+                    compressed_path = compress_image(cover_image_path, max_size_kb=500)
+                    if compressed_path:
+                        cover_image_path = compressed_path
+                        logger.info(f"✅ 封面图压缩完成")
+                    
+                    # 选择单图模式
+                    await self._select_single_image_mode()
+                    
+                    # 上传封面图
+                    await self._upload_cover_with_cdp_optimization(cover_image_path)
+                    logger.info("✅ [步骤1/6] 封面图处理完成")
+                else:
+                    logger.warning("⚠️  未生成封面图，将使用默认封面")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️  封面图处理失败: {e}")
+                import traceback
+                traceback.print_exc()
             
-            if title_input:
-                await title_input.fill(title)
-                await asyncio.sleep(1)
-                logger.info(f"标题已填写: {title}")
+            await asyncio.sleep(3)
 
-            # 3. 填写正文（富文本编辑器）
-            # 头条使用富文本编辑器，需要定位编辑器区域
-            editor = await self.page.query_selector('div[contenteditable="true"]')
-            if not editor:
-                editor = await self.page.query_selector('div.toutiao-editor')
+            # ★★★ [步骤2/6] 填写标题（使用测试脚本验证成功的JS方式）★★★
+            logger.info("📝 [步骤2/6] 开始填写标题...")
             
-            if editor:
-                await editor.fill(content)
-                await asyncio.sleep(2)
-                logger.info(f"正文已填写，长度: {len(content)} 字")
+            # ✅ 直接使用JS方式（测试脚本验证成功）
+            js_success = await self.page.evaluate(f"""
+                () => {{
+                    const inputs = document.querySelectorAll('input, textarea');
+                    for (const input of inputs) {{
+                        if (input.placeholder && input.placeholder.includes('标题')) {{
+                            input.focus();
+                            input.value = '';
+                            input.value = `{title}`;
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            input.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }}
+            """)
+            
+            if js_success:
+                logger.info("✅ 标题已通过 JS 填写")
+            else:
+                logger.error("❌ 标题填写失败！未找到标题输入框")
+                return {
+                    "status": "failed",
+                    "error": "标题填写失败，请检查页面是否正常加载"
+                }
+            
+            # 验证标题是否填写成功
+            await asyncio.sleep(1)
+            title_verification = await self.page.evaluate("""
+                () => {
+                    const inputs = document.querySelectorAll('input, textarea');
+                    for (const input of inputs) {
+                        if (input.placeholder && input.placeholder.includes('标题')) {
+                            return input.value || '(空)';
+                        }
+                    }
+                    return '未找到标题输入框';
+                }
+            """)
+            logger.info(f"📊 标题验证结果: {title_verification}")
+            
+            if title_verification == '(空)' or title_verification == '未找到标题输入框':
+                logger.error("❌ 标题填写验证失败，中止发布流程")
+                return {
+                    "status": "failed",
+                    "error": "标题填写验证失败"
+                }
+
+            # 3. ★★★ [步骤3/6] 生成文章配图（只生成文件，不插入）★★★
+            logger.info("🖼️ [步骤3/6] 开始生成文章配图...")
+            if article_images:
+                logger.info(f"✅ 已提供 {len(article_images)} 张配图")
+            else:
+                logger.info("ℹ️  未提供配图，将使用纯文本")
+
+            # 4. ★★★ [步骤4/6] 填写正文（富文本编辑器）★★★
+            logger.info("📄 [步骤4/6] 开始填写正文...")
+            try:
+                # 头条使用富文本编辑器，需要定位编辑器区域
+                editor = await self.page.query_selector('div[contenteditable="true"]')
+                if not editor:
+                    editor = await self.page.query_selector('div.toutiao-editor')
+                
+                if editor:
+                    # 先清空编辑器
+                    await editor.fill('')
+                    await asyncio.sleep(0.5)
+                    
+                    # 填写内容
+                    await editor.fill(content)
+                    await asyncio.sleep(2)
+                    logger.info(f"✅ 正文已填写，长度: {len(content)} 字")
+                    
+                    # 验证正文是否填写成功
+                    content_verification = await self.page.evaluate("""
+                        () => {
+                            const editor = document.querySelector('div[contenteditable="true"]');
+                            if (editor) {
+                                return editor.innerText || editor.textContent || '(空)';
+                            }
+                            return '未找到编辑器';
+                        }
+                    """)
+                    logger.info(f"📊 正文验证结果: {len(content_verification)} 字")
+                else:
+                    logger.error("❌ 未找到富文本编辑器")
+                    return {
+                        "status": "failed",
+                        "error": "未找到富文本编辑器，请检查页面是否正常加载"
+                    }
+            except Exception as e:
+                logger.error(f"❌ 正文填写失败: {e}")
+                import traceback
+                traceback.print_exc()
+                return {
+                    "status": "failed",
+                    "error": f"正文填写失败: {str(e)}"
+                }
 
             # 4. 选择分类
             if category:
@@ -685,230 +884,27 @@ class ToutiaoPublisher:
                 except Exception as e:
                     logger.warning(f"标签添加失败: {e}")
 
-            # 5.5 ★★★ 插入文章配图（在填写正文后、处理封面图前）★★★
+            # 5. ★★★ [步骤5/6] 插入文章配图（分散插入到不同段落）★★★
             if article_images:
-                logger.info("\n=== 开始插入文章配图 ===")
+                logger.info("\n=== [步骤5/6] 开始插入文章配图 ===")
                 await self._insert_article_images(article_images)
                 logger.info("=== 文章配图插入完成 ===\n")
             
-            # 6. ★★★ 处理封面图（关键！）★★★
-            logger.info("正在检查封面图...")
-            try:
-                # 如果需要自动生成封面图
-                if auto_generate_cover and not cover_image_path:
-                    logger.info("🤖 开始AI生成封面图...")
-                                            
-                    # ★★★ 使用LLM智能分析文章内容生成封面图（优先）★★★
-                    try:
-                        from app.services.content.llm_cover_generator import get_llm_cover_generator
-                        llm_generator = get_llm_cover_generator()
-                                                
-                        result = llm_generator.generate_cover_with_llm_analysis(
-                            title=title,
-                            content=content,  # 传入文章内容用于LLM分析
-                            category=category,
-                            style_override=cover_style if cover_style else None
-                        )
-                                                
-                        if result["status"] == "success":
-                            cover_image_path = result["file_path"]
-                            design_plan = result.get("design_plan", {})
-                            logger.info(f"✅ LLM智能封面生成成功!")
-                            logger.info(f"   视觉风格: {design_plan.get('visual_style', 'N/A')}")
-                            logger.info(f"   配色方案: {design_plan.get('color_scheme', 'N/A')}")
-                            logger.info(f"   关键词: {design_plan.get('keywords', [])}")
-                        else:
-                            logger.warning(f"⚠️  LLM封面生成失败: {result.get('error')}")
-                            logger.info("   降级使用传统模板生成...")
-                            raise Exception("LLM封面生成失败")
-                    except Exception as e:
-                        logger.warning(f"LLM封面生成异常: {e}，尝试其他方法...")
-                                    
-                        # 降级方案1: 如果使用模板
-                        if use_template:
-                            from app.services.content.cover_template_library import get_template_library
-                            library = get_template_library()
-                                                    
-                            result = library.generate_cover_from_template(
-                                template_id=use_template,
-                                title=title,
-                                subtitle=""
-                            )
-                                                    
-                            if result["status"] == "success":
-                                cover_image_path = result["file_path"]
-                                logger.info(f"✅ 使用模板生成封面: {result['template_name']}")
-                            else:
-                                logger.warning(f"⚠️  模板生成失败: {result.get('error')}")
-                        else:
-                            # 降级方案2: 使用传统AI生成（PIL图形）
-                            from app.services.content.ai_cover_generator import AICoverGenerator
-                            generator = AICoverGenerator()
-                                                    
-                            result = generator.generate_cover(
-                                title=title,
-                                subtitle="",
-                                category=category,
-                                style=cover_style
-                            )
-                                                    
-                            if result["status"] == "success":
-                                cover_image_path = result["file_path"]
-                                logger.info(f"✅ 传统AI生成封面成功: {result['style']} 风格")
-                            else:
-                                logger.warning(f"⚠️  AI生成失败: {result.get('error')}")
-                                        
-                # 如果提供了封面图路径，先压缩优化
-                if cover_image_path:
-                    logger.info("📦 优化封面图...")
-                    from app.utils.image_processor import ImageProcessor
-                    processor = ImageProcessor()
-                                            
-                    # 压缩图片
-                    compress_result = processor.compress_image(
-                        input_path=cover_image_path,
-                        quality=85,
-                        max_width=1920,
-                        max_height=1080,
-                        output_format='jpg'
-                    )
-                                            
-                    if compress_result["status"] == "success":
-                        cover_image_path = compress_result["output_path"]
-                        logger.info(f"✅ 封面图压缩完成: {compress_result['compression_ratio_percent']}% 压缩率")
-                    else:
-                        logger.warning(f"⚠️  压缩失败，使用原图: {compress_result.get('error')}")
-                            
-                # ★★★ 无论是否提供封面图，都先选择“单图”模式 ★★★
-                logger.info("📸 开始设置封面图模式...")
-                await self._select_single_image_mode()
-                            
-                # ★★★ CDP模式优化：参考 test_cdp_auto_publish.py ★★★
-                if cover_image_path:
-                    await self._upload_cover_with_cdp_optimization(cover_image_path)
-                else:
-                    logger.info("ℹ️  未提供封面图，将使用默认或无封面模式")
-                                
-            except Exception as e:
-                logger.warning(f"处理封面图时出错: {e}")
-                import traceback
-                traceback.print_exc()
-                            
-                # 查找“无封面”或“上传封面”按钮
-                cover_selectors = [
-                    'div:has-text("无封面")',
-                    'span:has-text("无封面")',
-                    'div:has-text("上传封面")',
-                    'button:has-text("上传")',
-                    '[class*="cover"] button'
-                ]
-                                        
-                cover_btn = None
-                for selector in cover_selectors:
-                    try:
-                        cover_btn = await self.page.query_selector(selector)
-                        if cover_btn and await cover_btn.is_visible():
-                            logger.info(f"✅ 找到封面图按钮: {selector}")
-                            break
-                    except:
-                        continue
-                                        
-                if cover_btn:
-                    # 点击封面图按钮
-                    await cover_btn.click()
-                    await asyncio.sleep(2)
-                    logger.info("✅ 已点击封面图按钮")
-                                            
-                    # 如果提供了自定义封面图路径，则上传
-                    if cover_image_path:
-                        logger.info(f"正在上传自定义封面图: {cover_image_path}")
-                                                
-                        # 等待上传对话框出现
-                        await asyncio.sleep(2)
-                                                
-                        # 查找文件上传input元素
-                        file_input_selectors = [
-                            'input[type="file"]',
-                            'input[accept*="image"]',
-                            '[class*="upload"] input[type="file"]'
-                        ]
-                                                
-                        file_input = None
-                        for selector in file_input_selectors:
-                            try:
-                                file_input = await self.page.query_selector(selector)
-                                if file_input:
-                                    logger.info(f"✅ 找到文件上传元素: {selector}")
-                                    break
-                            except:
-                                continue
-                                                
-                        if file_input:
-                            # 上传封面图
-                            await file_input.set_input_files(cover_image_path)
-                            logger.info("✅ 封面图文件已选择")
-                                                    
-                            # 等待上传完成
-                            await asyncio.sleep(5)
-                            logger.info("✅ 封面图上传完成")
-                                                    
-                            # 尝试点击确认按钮
-                            try:
-                                confirm_selectors = [
-                                    'button:has-text("确定")',
-                                    'button:has-text("确认")',
-                                    'button:has-text("完成")'
-                                ]
-                                                        
-                                for confirm_selector in confirm_selectors:
-                                    confirm_btn = await self.page.query_selector(confirm_selector)
-                                    if confirm_btn and await confirm_btn.is_visible():
-                                        await confirm_btn.click()
-                                        await asyncio.sleep(2)
-                                        logger.info(f"✅ 已点击确认按钮: {confirm_selector}")
-                                        break
-                            except Exception as e:
-                                logger.warning(f"未找到确认按钮或已自动确认: {e}")
-                        else:
-                            logger.warning("⚠️  未找到文件上传元素，使用默认封面")
-                    else:
-                        # 没有提供自定义封面，尝试选择第一张图片或使用默认
-                        logger.info("ℹ️  未提供自定义封面图，使用默认封面")
-                        try:
-                            first_image = await self.page.query_selector('img:first-of-type, .image-item:first-child')
-                            if first_image:
-                                await first_image.click()
-                                await asyncio.sleep(1)
-                                logger.info("✅ 已选择默认封面图")
-                            else:
-                                # 如果没有图片，尝试点击“确定”或“关闭”
-                                confirm_btn = await self.page.query_selector('button:has-text("确定"), button:has-text("关闭")')
-                                if confirm_btn:
-                                    await confirm_btn.click()
-                                    await asyncio.sleep(1)
-                                    logger.info("⚠️  使用默认封面或跳过封面选择")
-                        except Exception as e:
-                            logger.warning(f"选择封面图失败: {e}")
-                else:
-                    logger.info("ℹ️  未找到封面图按钮，可能已有封面或非必填")
-            except Exception as e:
-                logger.warning(f"处理封面图时出错: {e}")
-
-            # 6. ★★★ 设置作品声明（根据declaration_type参数）★★★
-            await self._set_declaration(declaration_type)
+            # 6. ★★★ [步骤6/6] 设置作品声明（根据declarations参数）★★★
+            await self._set_declaration(declaration_type, declarations)
             await asyncio.sleep(2)
-            
+
             # 7. 点击发布按钮
             logger.info("正在查找发布按钮...")
             publish_selectors = [
-                'button:has-text("预览并发布")',  # ★★★ 头条实际按钮文字 ★★★
+                'button:has-text("预览并发布")',  # ★★★ 头条实际按钮文字（优先）★★★
+                '.byte-btn:has-text("预览并发布")',  # ★★★ 头条样式 ★★★
                 'button:has-text("发布")',
+                '.byte-btn:has-text("发布")',
                 'button.publish-btn',
                 'button[type="submit"]',
                 'button[class*="publish"]',
                 'button[class*="btn"]:has-text("发布")',
-                '.byte-btn:has-text("发布")',
-                '.byte-btn:has-text("预览并发布")',  # ★★★ 头条样式 ★★★
                 'a:has-text("发布")'
             ]
             
@@ -986,18 +982,54 @@ class ToutiaoPublisher:
             before_url = self.page.url
             logger.info(f"点击发布前URL: {before_url}")
             
+            # ★★★ 关键修复：隐藏 AI 助手抽屉（防止遮挡发布按钮）★★★
+            logger.info("   🛡️  隐藏 AI 助手抽屉...")
+            try:
+                await self.page.evaluate("""
+                    () => {
+                        // 隐藏所有 AI 助手相关的抽屉
+                        const drawers = document.querySelectorAll('.byte-drawer-wrapper, .ai-assistant-drawer, .ai-conversation');
+                        drawers.forEach(drawer => {
+                            drawer.style.display = 'none';
+                            drawer.style.visibility = 'hidden';
+                            drawer.style.pointerEvents = 'none';
+                        });
+                        
+                        // 隐藏右侧面板
+                        const rightPanels = document.querySelectorAll('[class*="drawer"], [class*="assistant"], [class*="sidebar"]');
+                        rightPanels.forEach(panel => {
+                            if (panel.getBoundingClientRect().right > window.innerWidth * 0.7) {
+                                panel.style.display = 'none';
+                            }
+                        });
+                        
+                        console.log('AI 助手已隐藏');
+                    }
+                """)
+                await asyncio.sleep(1)
+                logger.info("   ✅ AI 助手已隐藏")
+            except Exception as e:
+                logger.warning(f"   ⚠️  隐藏 AI 助手失败: {e}")
+            
             # 点击发布按钮
             await publish_button.click()
             logger.info("✅ 已点击发布按钮，等待响应...")
             
-            # 等待网络请求和页面变化
-            await asyncio.sleep(5)
+            # ★★★ 关键修复：增加等待时间，头条发布需要较长时间 ★★★
+            logger.info("   ⏳ 等待发布请求（最多30秒）...")
+            for i in range(30):  # 等待30秒，每秒检查一次
+                await asyncio.sleep(1)
+                if publish_request_detected:
+                    logger.info(f"   ✅ 在第{i+1}秒检测到发布请求")
+                    break
+                if i % 5 == 0 and i > 0:
+                    logger.info(f"   ⏳ 已等待{i}秒...")
             
             # 检查是否有网络请求
             if publish_request_detected:
                 logger.info(f"✅ 检测到发布网络请求，响应状态: {response_status}")
             else:
-                logger.warning("⚠️  未检测到发布相关的网络请求！")
+                logger.warning("⚠️  30秒内未检测到发布相关的网络请求！")
             
             # 检查URL是否变化
             after_url = self.page.url
@@ -1143,6 +1175,17 @@ class ToutiaoPublisher:
                 }
             else:
                 # 没有明确的成功/失败提示，根据其他指标判断
+                # ★★★ 关键修复：再等待一段时间，让页面有时间跳转 ★★★
+                logger.info("   ⏳ 等待页面跳转（最多20秒）...")
+                for i in range(20):
+                    await asyncio.sleep(1)
+                    current_url = self.page.url
+                    if "publish" not in current_url:
+                        logger.info(f"   ✅ 在第{i+1}秒检测到URL变化: {current_url}")
+                        break
+                    if i % 5 == 0 and i > 0:
+                        logger.info(f"   ⏳ 已等待{i}秒，当前URL: {current_url}")
+                
                 current_url = self.page.url
                 logger.info(f"当前URL: {current_url}")
                 
@@ -1386,70 +1429,166 @@ class ToutiaoPublisher:
                     single_image_selected = True
                     await asyncio.sleep(2)
                 
-            # 步骤3：点击"+"区域触发上传对话框
+            # 步骤3：点击封面上传区域（使用测试脚本验证成功的方式）
             if single_image_selected:
                 logger.info("   步骤2：点击封面上传区域...")
                     
                 try:
-                    # 点击包含"+"和"预览"的区域
-                    click_result = await self.page.evaluate("""
+                    # ★★★ 关键修复：使用测试脚本验证成功的方式（鼠标点击）★★★
+                    # 获取封面上传区域的中心坐标
+                    box_info = await self.page.evaluate("""
                         () => {
-                            const allDivs = Array.from(document.querySelectorAll('div'));
-                            for (const div of allDivs) {
-                                const text = div.textContent || '';
-                                // 查找包含"+"和"预览"文字的区域
-                                if (text.includes('+') && text.includes('预览') && div.children.length < 10) {
-                                    div.click();
+                            const coverBox = document.querySelector('.article-cover-images');
+                            if (coverBox) {
+                                const rect = coverBox.getBoundingClientRect();
+                                return {
+                                    center_x: rect.left + rect.width / 2,
+                                    center_y: rect.top + rect.height / 2
+                                };
+                            }
+                            return null;
+                        }
+                    """)
+                    
+                    if box_info:
+                        # ✅ 使用鼠标点击（与测试脚本一致）
+                        await self.page.mouse.click(box_info['center_x'], box_info['center_y'])
+                        logger.info("   ✅ 已通过鼠标点击封面上传区域，等待对话框打开...")
+                        await asyncio.sleep(3)
+                    else:
+                        logger.warning("   ⚠️  未找到.article-cover-images元素")
+                        raise Exception("未找到封面上传区域")
+                        
+                    # ★★★ 关键修复：关闭之前可能存在的对话框 ★★★
+                    logger.info("   步骤2.5：关闭之前的对话框...")
+                    await self.page.evaluate("""
+                        () => {
+                            // 按 ESC 关闭可能的弹窗
+                            const event = new KeyboardEvent('keydown', {
+                                key: 'Escape',
+                                code: 'Escape',
+                                bubbles: true
+                            });
+                            document.dispatchEvent(event);
+                            
+                            // 关闭所有抽屉和模态框
+                            const closeButtons = document.querySelectorAll('.byte-drawer-close, .byte-modal-close');
+                            closeButtons.forEach(btn => btn.click());
+                            
+                            // 隐藏遮罩层
+                            const masks = document.querySelectorAll('.byte-drawer-mask, .byte-modal-mask');
+                            masks.forEach(mask => mask.style.display = 'none');
+                        }
+                    """)
+                    await asyncio.sleep(1)
+                        
+                    # 步骤3：点击"上传图片"按钮
+                    logger.info("   步骤3：点击'上传图片'按钮...")
+                    await self.page.evaluate("""
+                        () => {
+                            const allElements = document.querySelectorAll('button, [role="button"], span, div');
+                            for (const el of allElements) {
+                                const text = (el.textContent || '').trim();
+                                const rect = el.getBoundingClientRect();
+                                if (text.includes('上传图片') && rect.width > 50 && rect.top > 0) {
+                                    el.click();
                                     return true;
                                 }
                             }
                             return false;
                         }
                     """)
+                    await asyncio.sleep(3)  # 增加到3秒
+                    logger.info("   ✅ 已点击'上传图片'按钮")
+                                        
+                    # 步骤4：在对话框中查找file input并上传
+                    logger.info("   步骤4：上传封面图文件...")
+                                            
+                    # ★★★ 关键修复2：复用文章配图成功的方案 - 不等待文件选择器，直接上传 ★★★
+                    try:
+                        logger.info("   ⏳ 直接上传文件（不等待文件选择器）...")
+                        await asyncio.sleep(2)  # 短暂等待对话框稳定
                         
-                    if click_result:
-                        logger.info("   ✅ 已点击封面上传区域，等待对话框打开...")
-                        await asyncio.sleep(3)
-                            
-                        # 步骤4：在对话框中查找file input并上传
-                        logger.info("   步骤3：上传封面图文件...")
-                            
-                        # 等待对话框出现
-                        try:
-                            file_input = await self.page.wait_for_selector('input[type="file"]', timeout=5000)
-                                
-                            if file_input:
-                                await self.page.locator('input[type="file"]').first.set_input_files(cover_image_path)
-                                logger.info("   ✅ 封面图已上传")
-                                await asyncio.sleep(3)
-                                    
-                                # 等待上传完成，可能需要点击确认按钮
-                                try:
-                                    confirm_selectors = ['text="确定"', 'text="确认"', 'text="完成"']
-                                    for selector in confirm_selectors:
-                                        try:
-                                            confirm_btn = await self.page.query_selector(selector)
-                                            if confirm_btn and await confirm_btn.is_visible():
-                                                await confirm_btn.click()
-                                                logger.info("   ✅ 已点击确认按钮")
-                                                await asyncio.sleep(2)
-                                                break
-                                        except:
-                                            continue
-                                except Exception as e:
-                                    logger.info("   ℹ️  未找到确认按钮，可能已自动关闭")
-                            else:
-                                logger.warning("   ⚠️  未找到文件上传元素")
-                        except Exception as e:
-                            logger.warning(f"   ⚠️  等待file input超时: {e}")
-                    else:
-                        logger.warning("   ⚠️  未找到封面上传区域")
+                        # 使用 .first 定位器，与文章配图一致
+                        file_input = self.page.locator('input[type="file"]').first
+                        await file_input.set_input_files(cover_image_path, timeout=10000)
+                        logger.info("   ✅ 封面图已上传")
+                                                
+                        # ✅ 步骤5：等待头条处理上传（参考测试脚本）
+                        logger.info("   ⏳ 等待图片上传和处理(10秒)...")
+                        await asyncio.sleep(10)
+                                                    
+                        # ✅ 步骤6：点击确认按钮（参考测试脚本）
+                        logger.info("   步骤6：点击'确定'按钮...")
+                        confirm_clicked = await self.page.evaluate("""
+                            () => {
+                                const allButtons = document.querySelectorAll('button, [role="button"]');
+                                for (const btn of allButtons) {
+                                    const text = (btn.textContent || '').trim();
+                                    const rect = btn.getBoundingClientRect();
+                                    if ((text === '确定' || text === '确认' || text === '完成') && 
+                                        rect.width > 50 && rect.top > 0) {
+                                        btn.click();
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            }
+                        """)
+                                            
+                        if confirm_clicked:
+                            logger.info("   ✅ 已点击确认按钮")
+                            await asyncio.sleep(3)
+                        else:
+                            logger.info("   ℹ️  未找到确认按钮（可能自动处理）")
+                                            
+                        # ✅ 步骤7：验证封面是否成功上传（参考测试脚本）
+                        logger.info("   步骤7：验证封面...")
+                        await asyncio.sleep(5)
+                                            
+                        cover_uploaded = await self.page.evaluate("""
+                            () => {
+                                const imgs = document.querySelectorAll('img');
+                                for (const img of imgs) {
+                                    const rect = img.getBoundingClientRect();
+                                    if (rect.width > 100 && rect.height > 100 && rect.top > 200) {
+                                        if (img.src && !img.src.includes('data:')) {
+                                            console.log('找到封面图:', img.src.substring(0, 80));
+                                            return true;
+                                        }
+                                    }
+                                }
+                                return false;
+                            }
+                        """)
+                                            
+                        if cover_uploaded:
+                            logger.info("   ✅ 封面图已成功上传！")
+                        else:
+                            logger.warning("   ⚠️  封面图未显示，请检查截图")
+                            # 保存调试截图
+                            try:
+                                screenshot_path = f"logs/cover_upload_debug_{int(asyncio.get_event_loop().time())}.png"
+                                await self.page.screenshot(path=screenshot_path, full_page=True)
+                                logger.info(f"   ℹ️  调试截图已保存: {screenshot_path}")
+                            except:
+                                pass
+                    except Exception as e:
+                        logger.error(f"   ❌ 封面图上传失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # ✅ 关键修复：上传失败时抛出异常，不继续执行
+                        raise
                             
                 except Exception as e:
-                    logger.warning(f"   ⚠️  上传过程出错: {e}")
+                    logger.error(f"   ❌ 上传过程出错: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    raise  # ✅ 抛出异常，让上层知道失败了
             else:
                 logger.warning("   ⚠️  未能选择单图模式")
                 
+            # ✅ 只有成功执行到这里才显示成功
             logger.info("✅ 封面图设置完成")
                 
         except Exception as e:
@@ -1459,7 +1598,7 @@ class ToutiaoPublisher:
     
     async def _insert_article_images(self, image_paths: list):
         """
-        插入文章配图到富文本编辑器（完全复用成功测试脚本的逻辑）
+        插入文章配图到富文本编辑器（分散插入到不同段落）
         
         :param image_paths: 图片路径列表
         """
@@ -1467,7 +1606,7 @@ class ToutiaoPublisher:
             logger.info("ℹ️  未提供文章配图")
             return
         
-        logger.info(f"📸 开始插入文章配图，共 {len(image_paths)} 张...")
+        logger.info(f"📸 开始插入文章配图，共 {len(image_paths)} 张（分散插入模式）...")
         
         try:
             # 滚动到编辑器位置
@@ -1481,14 +1620,81 @@ class ToutiaoPublisher:
             """)
             await asyncio.sleep(2)
             
-            for idx, img_path in enumerate(image_paths, 1):
-                logger.info(f"   步骤{idx}/{len(image_paths)}：上传配图 '{img_path}'...")
+            # ★★★ 关键优化：获取文章段落数量，计算分散插入位置 ★★★
+            paragraph_count = await self.page.evaluate("""
+                () => {
+                    const editor = document.querySelector('div[contenteditable="true"]');
+                    if (!editor) return 0;
+                    // 获取所有段落元素（p标签或div）
+                    const paragraphs = editor.querySelectorAll('p, div');
+                    return paragraphs.length;
+                }
+            """)
+            
+            logger.info(f"   📊 检测到文章共有 {paragraph_count} 个段落")
+            
+            if paragraph_count == 0:
+                logger.warning("   ⚠️  未检测到段落，将按顺序插入")
+                paragraph_count = len(image_paths)  #  fallback：每张图片一个位置
+            
+            # 计算每张图片应该插入的段落索引（均匀分布）
+            # 例如：5张图片，10个段落 → 插入位置：0, 2, 4, 6, 8
+            insert_positions = []
+            if len(image_paths) <= paragraph_count:
+                # 图片数 <= 段落数：均匀分布
+                step = paragraph_count // len(image_paths)
+                insert_positions = [i * step for i in range(len(image_paths))]
+            else:
+                # 图片数 > 段落数：尽可能分散，但可能有些段落有多张图片
+                step = max(1, paragraph_count // len(image_paths))
+                insert_positions = [min(i * step, paragraph_count - 1) for i in range(len(image_paths))]
+            
+            logger.info(f"   📍 计划插入位置（段落索引）: {insert_positions}")
+            
+            for idx, (img_path, target_position) in enumerate(zip(image_paths, insert_positions), 1):
+                logger.info(f"   步骤{idx}/{len(image_paths)}：上传配图 '{img_path}' 到第 {target_position + 1} 段落后...")
                 
                 # 转换为绝对路径
                 import os
                 abs_img_path = os.path.abspath(img_path)
                 
-                # ★★★ 第一步：点击编辑器的图片按钮（第12个工具栏按钮）★★★
+                # ★★★ 第一步：将光标移动到目标段落位置 ★★★
+                logger.info(f"      步骤 0：移动光标到目标段落...")
+                cursor_moved = await self.page.evaluate("""
+                    (targetIndex) => {
+                        const editor = document.querySelector('div[contenteditable="true"]');
+                        if (!editor) return false;
+                        
+                        const paragraphs = editor.querySelectorAll('p, div');
+                        if (targetIndex >= paragraphs.length) return false;
+                        
+                        const targetParagraph = paragraphs[targetIndex];
+                        
+                        // 创建Range并选中目标段落的末尾
+                        const range = document.createRange();
+                        const sel = window.getSelection();
+                        
+                        // 将光标放在段落的末尾
+                        range.selectNodeContents(targetParagraph);
+                        range.collapse(false);  // false表示折叠到末尾
+                        
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                        
+                        // 滚动到光标位置
+                        targetParagraph.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        
+                        return true;
+                    }
+                """, target_position)
+                
+                if cursor_moved:
+                    logger.info(f"      ✅ 光标已移动到第 {target_position + 1} 个段落")
+                    await asyncio.sleep(1)
+                else:
+                    logger.warning(f"      ⚠️  无法移动光标，将在当前位置插入")
+                
+                # ★★★ 第二步：点击编辑器的图片按钮（第12个工具栏按钮）★★★
                 logger.info(f"      步骤 1：点击编辑器图片按钮...")
                 
                 # 先关闭可能存在的对话框
@@ -1545,8 +1751,8 @@ class ToutiaoPublisher:
                     logger.info(f"      📊 前15个按钮文本: {dialog_info['buttonTexts']}")
                     
                     # ★★★ 完全复用封面上传的成功逻辑 ★★★
-                    
-                    # 步骤1：点击"本地上传"按钮
+                                        
+                    # 步骤2：点击“本地上传”按钮
                     logger.info(f"      步骤 2：点击'本地上传'按钮...")
                     await self.page.evaluate("""
                         () => {
@@ -1565,7 +1771,7 @@ class ToutiaoPublisher:
                     await asyncio.sleep(2)
                     logger.info(f"      ✅ 已点击'本地上传'按钮")
                     
-                    # 步骤2：等待文件选择器出现并上传
+                    # 步骤3：等待文件选择器出现并上传
                     logger.info(f"      步骤 3：等待文件选择器...")
                     await asyncio.sleep(2)
                     
@@ -1575,15 +1781,15 @@ class ToutiaoPublisher:
                         await file_input.set_input_files(abs_img_path, timeout=5000)
                         logger.info(f"      ✅ 文件已上传")
                     except Exception as e:
-                        logger.warning(f"      ⚠️  文件上传失败：{e}")
-                        raise
+                        logger.error(f"      ❌ 文件上传失败：{e}")
+                        raise  # ✅ 关键修复：抛出异常，中断执行
                     
-                    # 步骤3：等待头条处理上传
+                    # 步骤4：等待头条处理上传
                     logger.info(f"       等待图片上传和处理(15秒)...")
                     await asyncio.sleep(15)  # 关键：必须是15秒
                     
-                    # 步骤4：点击确认按钮
-                    logger.info(f"      步骤 4：点击'确定'按钮...")
+                    # 步骤5：点击确认按钮
+                    logger.info(f"      步骤 5：点击'确定'按钮...")
                     confirm_clicked = await self.page.evaluate("""
                         () => {
                             const allButtons = document.querySelectorAll('button, [role="button"]');
@@ -1641,8 +1847,8 @@ class ToutiaoPublisher:
                         else:
                             logger.info(f"      ℹ️  未找到确认按钮（可能自动处理）")
                     
-                    # 步骤5：验证图片是否插入编辑器
-                    logger.info(f"      步骤 5：验证图片...")
+                    # 步骤6：验证图片是否插入编辑器
+                    logger.info(f"      步骤 6：验证图片...")
                     await asyncio.sleep(3)
                     
                     img_count = await self.page.evaluate("""
@@ -1664,51 +1870,63 @@ class ToutiaoPublisher:
             logger.info(f"   ✅ 所有配图已处理")
         
         except Exception as e:
-            logger.warning(f"   ⚠️  插入配图失败：{e}")
+            logger.error(f"   ❌ 插入配图失败：{e}")
             import traceback
             traceback.print_exc()
+            raise  # ✅ 关键修复：抛出异常，让上层知道失败了
     
-    async def _set_declaration(self, declaration_type: str = "ai"):
+    async def _set_declaration(self, declaration_type: str = "ai", declarations: list = None):
         """
-        设置作品声明
-        :param declaration_type: 声明类型
+        设置作品声明（支持多选）
+        :param declaration_type: 声明类型（已废弃，改用declarations）
             - "ai": 引用AI
             - "personal_opinion": 仅个人观点，仅供参考
+        :param declarations: 声明列表（多选）
+            - ["引用ai"]
+            - ["引用ai", "个人观点"]
+            - ["取材网络", "虚构演绎"]
+            等组合
         """
-        logger.info(f"📝 设置作品声明（类型: {declaration_type}）...")
+        # 兼容旧参数
+        if declarations is None:
+            declarations = [declaration_type]
+        
+        logger.info(f"📝 设置作品声明（类型: {declarations}）...")
             
         try:
             # 滚动到页面底部，加载"作品声明"区域
             await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await asyncio.sleep(2)
             logger.info("   ✅ 已滚动到底部")
+            
+            # 头条作品声明选项映射
+            declaration_mapping = {
+                '引用ai': '引用AI',
+                'ai': '引用AI',
+                '取材网络': '取材网络',
+                '引用站内': '引用站内',
+                '个人观点': '个人观点，仅供参考',
+                'personal_opinion': '个人观点，仅供参考',
+                '虚构演绎': '虚构演绎，故事经历',
+                '投资观点': '投资观点，仅供参考',
+                '健康医疗': '健康医疗分享，仅供参考'
+            }
+            
+            # 遍历用户选择的声明，逐个勾选
+            for decl in declarations:
+                target_text = declaration_mapping.get(decl, decl)
+                logger.info(f"   正在查找'{target_text}'选项...")
                 
-            # 根据声明类型查找并勾选对应的选项
-            if declaration_type == "personal_opinion":
-                # 查找"仅个人观点，仅供参考"选项
-                declaration_texts = [
-                    '仅个人观点',
-                    '个人观点',
-                    '仅供参考',
-                    '仅个人观点，仅供参考'
-                ]
-                logger.info("   正在查找'仅个人观点，仅供参考'选项...")
-            else:
-                # 默认查找"引用AI"选项
-                declaration_texts = ['引用AI']
-                logger.info("   正在查找'引用AI'选项...")
-                
-            declaration_checked = await self.page.evaluate(f"""
-                () => {{
-                    const targetTexts = {json.dumps(declaration_texts)};
-                        
-                    // 查找所有 checkbox
-                    const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-                    for (const cb of allCheckboxes) {{
-                        const label = cb.closest('label') || cb.parentElement;
-                        if (label) {{
-                            const labelText = label.textContent || '';
-                            for (const targetText of targetTexts) {{
+                declaration_checked = await self.page.evaluate(f"""
+                    () => {{
+                        const targetText = '{target_text}';
+                            
+                        // 查找所有 checkbox
+                        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+                        for (const cb of allCheckboxes) {{
+                            const label = cb.closest('label') || cb.parentElement;
+                            if (label) {{
+                                const labelText = label.textContent || '';
                                 if (labelText.includes(targetText)) {{
                                     if (!cb.checked) {{
                                         cb.click();
@@ -1717,24 +1935,22 @@ class ToutiaoPublisher:
                                 }}
                             }}
                         }}
+                        return false;
                     }}
-                    return false;
-                }}
-            """)
-                
-            if declaration_checked:
-                logger.info(f"   ✅ 已勾选{declaration_texts[0]}声明")
-            else:
-                logger.warning(f"   ⚠️  未找到{declaration_texts[0]}选项")
+                """)
                     
-                # 备用方案：直接通过文本查找
-                await self.page.evaluate(f"""
-                    () => {{
-                        const targetTexts = {json.dumps(declaration_texts)};
-                        const allElements = document.querySelectorAll('*');
-                        for (const el of allElements) {{
-                            const text = el.textContent || '';
-                            for (const targetText of targetTexts) {{
+                if declaration_checked:
+                    logger.info(f"   ✅ 已勾选{target_text}声明")
+                else:
+                    logger.warning(f"   ⚠️  未找到{target_text}选项")
+                        
+                    # 备用方案：直接通过文本查找
+                    await self.page.evaluate(f"""
+                        () => {{
+                            const targetText = '{target_text}';
+                            const allElements = document.querySelectorAll('*');
+                            for (const el of allElements) {{
+                                const text = el.textContent || '';
                                 if (text.includes(targetText) && (el.tagName === 'LABEL' || el.tagName === 'SPAN')) {{
                                     const checkbox = el.querySelector('input[type="checkbox"]') || 
                                                    el.parentElement?.querySelector('input[type="checkbox"]') ||
@@ -1747,11 +1963,13 @@ class ToutiaoPublisher:
                                     return true;
                                 }}
                             }}
+                            return false;
                         }}
-                        return false;
-                    }}
-                """)
-                logger.info(f"   ✅ 已通过备用方案勾选{declaration_texts[0]}")
+                    """)
+                    logger.info(f"   ✅ 已通过备用方案勾选{target_text}")
+                
+                # 每个声明之间稍作延迟
+                await asyncio.sleep(0.5)
                     
         except Exception as e:
             logger.warning(f"⚠️  设置声明失败: {e}")
@@ -1765,21 +1983,33 @@ class ToutiaoPublisher:
     async def close(self):
         """关闭浏览器并清理资源"""
         try:
+            # ★★★ 关键修复：CDP模式下只关闭标签页，不关闭浏览器 ★★★
             if self.page:
+                logger.info("   📑 关闭标签页...")
                 await self.page.close()
                 self.page = None
+                logger.info("   ✅ 标签页已关闭")
             
-            if self.context:
-                await self.context.close()
-                self.context = None
-            
-            if self.browser:
-                await self.browser.close()
-                self.browser = None
-            
-            if self.playwright:
-                await self.playwright.stop()
-                self.playwright = None
+            # 只在非CDP模式下关闭context和browser
+            if hasattr(self, '_is_cdp_mode') and self._is_cdp_mode:
+                logger.info("   ℹ️  CDP模式：保持浏览器运行，只断开连接")
+                # 只断开Playwright连接，不关闭浏览器
+                if self.playwright:
+                    await self.playwright.stop()
+                    self.playwright = None
+            else:
+                # 标准模式：关闭所有资源
+                if self.context:
+                    await self.context.close()
+                    self.context = None
+                
+                if self.browser:
+                    await self.browser.close()
+                    self.browser = None
+                
+                if self.playwright:
+                    await self.playwright.stop()
+                    self.playwright = None
             
             logger.info(f"头条发布引擎已关闭，账号 ID: {self.account_id}")
         except Exception as e:

@@ -139,7 +139,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
@@ -174,7 +174,7 @@ const fetchRecords = async () => {
       params.status = filters.value.status
     }
 
-    const response = await axios.get('http://localhost:8000/api/v1/content/tasks', { params })
+    const response = await apiClient.get('/content/tasks', { params })
     records.value = response.data.tasks
     pagination.value.total = response.data.total
   } catch (error) {
@@ -197,7 +197,7 @@ const viewDetail = async (task: any) => {
   
   // 获取完整文章内容
   try {
-    const response = await axios.get(`http://localhost:8000/api/v1/content/tasks/${task.id}`)
+    const response = await apiClient.get(`/content/tasks/${task.id}`)
     currentArticleContent.value = response.data.article_content || ''
   } catch (error) {
     console.error('获取文章详情失败:', error)

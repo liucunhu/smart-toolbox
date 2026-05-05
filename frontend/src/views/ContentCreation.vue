@@ -138,7 +138,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useContentCreation } from '../composables/useContentCreation'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const { form, loading, result, handleGenerate } = useContentCreation()
@@ -150,14 +150,14 @@ const toutiaoAccounts = ref<any[]>([])
 // 获取头条账号列表
 const fetchToutiaoAccounts = async () => {
   try {
-    const response = await axios.get('http://localhost:8000/api/v1/accounts/list', {
+    const response = await apiClient.get('/accounts/list', {
       params: {
         platform: 'toutiao',
-        skip: 0,
-        limit: 100
+        page: 1,
+        page_size: 100
       }
     })
-    toutiaoAccounts.value = response.data.accounts
+    toutiaoAccounts.value = response.data.data.items
     
     // 默认选择第一个账号
     if (toutiaoAccounts.value.length > 0 && !selectedAccountId.value) {
@@ -187,19 +187,23 @@ const handlePublishToutiao = async () => {
 
   // 检查账号是否已登录
   if (!isAccountLoggedIn(selectedAccountId.value)) {
-    ElMessage.warning('该账号尚未登录，请先在"头条账号管理"页面登录账号，或使用"一键全自动发布"功能')
+    ElMessage.warning('该账号尚未登录，请先在“头条账号管理”页面登录账号，或使用“一键全自动发布”功能')
     return
   }
 
   publishing.value = true
   try {
-    const response = await axios.post('http://localhost:8000/api/v1/content/toutiao/publish', null, {
+    const response = await apiClient.post('/content/toutiao/publish', null, {
       params: {
         account_id: selectedAccountId.value,
         title: result.value.article_title,
         content: result.value.article_content,
         category: result.value.article_category || '科技',
-        tags: result.value.tags || []
+        tags: result.value.tags || [],
+        auto_generate_cover: true,  // ✅ 启用AI自动生成封面图
+        cover_style: 'modern',       // ✅ 现代科技风格
+        use_cdp: true,               // ✅ 使用CDP模式（推荐）
+        cdp_port: 9222
       }
     })
 
@@ -236,13 +240,17 @@ const handleAutoPublishToutiao = async () => {
 
   autoPublishing.value = true
   try {
-    const response = await axios.post('http://localhost:8000/api/v1/content/toutiao/auto_publish', null, {
+    const response = await apiClient.post('/content/toutiao/auto_publish', null, {
       params: {
         account_id: selectedAccountId.value,
         topic: form.value.topic,
         username: username,
         password: password,
-        category: result.value.article_category || '科技'
+        category: result.value.article_category || '科技',
+        auto_generate_cover: true,  // ✅ 启用AI自动生成封面图
+        cover_style: 'modern',       // ✅ 现代科技风格
+        use_cdp: true,               // ✅ 使用CDP模式（推荐）
+        cdp_port: 9222
       }
     })
 

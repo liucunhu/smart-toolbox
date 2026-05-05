@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="video-restructure">
     <el-row :gutter="20">
       <!-- 视频上传与分析 -->
@@ -175,7 +175,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -205,7 +205,7 @@ const analyzeVideo = async () => {
     const formData = new FormData()
     formData.append('video', videoFile.value)
 
-    const response = await axios.post(`${API_BASE_URL}/content/analyze-segments`, formData, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/analyze-segments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 
@@ -233,7 +233,7 @@ const restructureVideo = async () => {
     formData.append('reorder_probability', String(reorderProbability.value / 100))
     formData.append('insert_interval', String(insertInterval.value))
 
-    const response = await axios.post(`${API_BASE_URL}/content/restructure-video`, formData, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/restructure-video`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 

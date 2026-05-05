@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, U
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import Account, PlatformEnum, AccountStatusEnum, ContentTask, PublishRecord
-from app.schemas.account import AccountCreate, AccountResponse, AccountListResponse
+from app.schemas.account import AccountCreate, AccountResponse, AccountListResponse, AccountUpdateRequest
 from app.tasks.account_tasks import register_account_task
 from app.tasks.content_tasks import generate_script_task, process_video_task
 from app.services.distribute.ac_filter import HighPerformanceFilter
@@ -92,9 +92,7 @@ def get_account_detail(account_id: int, db: Session = Depends(get_db)):
 @router.put("/accounts/{account_id}", summary="更新账号信息")
 def update_account(
     account_id: int,
-    username: str = None,
-    password: str = None,
-    proxy_ip: str = None,
+    request: AccountUpdateRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -102,20 +100,20 @@ def update_account(
     
     - **account_id**: 账号ID
     - **username**: 用户名（可选）
-    - **password**: 密码（可选）
-    - **proxy_ip**: 代理IP（可选）
+    - **password**: 密码（可选，最少6字符）
+    - **proxy_ip**: 代理IP（可选，格式：x.x.x.x或x.x.x.x:port）
     """
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="账号不存在")
     
     # 更新字段
-    if username is not None:
-        account.username = username
-    if password is not None:
-        account.password = password
-    if proxy_ip is not None:
-        account.proxy_ip = proxy_ip
+    if request.username is not None:
+        account.username = request.username
+    if request.password is not None:
+        account.password = request.password
+    if request.proxy_ip is not None:
+        account.proxy_ip = request.proxy_ip
     
     db.commit()
     db.refresh(account)
@@ -460,10 +458,12 @@ def publish_toutiao_article(
     category: str = "科技",
     tags: list = None,
     cover_image_path: str = None,
-    auto_generate_cover: bool = False,
+    auto_generate_cover: bool = True,  # ✅ 修复：默认启用封面图生成
     cover_style: str = "modern",
     use_template: str = None,
     declaration_type: str = "ai",  # 新增参数：声明类型
+    use_cdp: bool = True,  # CDP模式：使用真实Edge浏览器（推荐）
+    cdp_port: int = 9222,  # CDP调试端口
     username: str = None,
     password: str = None,
     db: Session = Depends(get_db)
@@ -483,6 +483,8 @@ def publish_toutiao_article(
     - **cover_style**: AI生成风格 (modern/minimal/bold)
     - **use_template**: 使用的模板ID
     - **declaration_type**: 作品声明类型 ("ai"=引用AI, "personal_opinion"=仅个人观点)
+    - **use_cdp**: 是否使用CDP模式（连接真实Edge浏览器，推荐=True）
+    - **cdp_port**: CDP调试端口（默认9222）
     - **username**: 用户名（可选，用于查找或创建账号）
     - **password**: 密码（可选，用于查找或创建账号）
     """
@@ -526,7 +528,13 @@ def publish_toutiao_article(
     async def publish_process():
         publisher = ToutiaoPublisher(account_id=account_id)
         try:
-            await publisher.initialize_browser()
+            # 初始化浏览器（支持CDP模式）
+            if use_cdp:
+                logger.info(f"🚀 使用CDP模式连接真实Edge浏览器（端口 {cdp_port}）...")
+                await publisher.initialize_browser(use_cdp=True, cdp_port=cdp_port)
+            else:
+                logger.info("使用标准浏览器模式...")
+                await publisher.initialize_browser(use_cdp=False)
             
             # 智能登录：优先使用Cookie
             login_success = False
@@ -614,8 +622,11 @@ def auto_publish_toutiao(
     auto_generate_cover: bool = True,
     cover_style: str = "modern",
     use_template: str = None,
-    declaration_type: str = "ai",  # 新增参数：声明类型
+    declaration_type: str = "ai",  # 新增参数：声明类型（已废弃，改用declarations）
+    declarations: str = None,  # ✅ 新增参数：作品声明（JSON字符串数组）
     article_images: list = None,  # 新增参数：文章配图路径列表
+    use_cdp: bool = True,  # CDP模式：使用真实Edge浏览器（推荐）
+    cdp_port: int = 9222,  # CDP调试端口
     db: Session = Depends(get_db)
 ):
     """
@@ -639,6 +650,8 @@ def auto_publish_toutiao(
     - **use_template**: 使用的模板ID
     - **declaration_type**: 作品声明类型 ("ai"=引用AI, "personal_opinion"=仅个人观点)
     - **article_images**: 文章配图路径列表（可选）
+    - **use_cdp**: 是否使用CDP模式（连接真实Edge浏览器，推荐=True）
+    - **cdp_port**: CDP调试端口（默认9222）
     """
     from app.services.publish.toutiao_publisher import ToutiaoPublisher
     from app.services.content.copywriting_generation import CopywritingGenerator
@@ -654,7 +667,14 @@ def auto_publish_toutiao(
         try:
             # ========== 步骤 1: 智能登录 ==========
             logger.info(f"[步骤1/4] 开始登录头条账号 {account_id}...")
-            await publisher.initialize_browser()
+            
+            # 初始化浏览器（支持CDP模式）
+            if use_cdp:
+                logger.info(f"🚀 使用CDP模式连接真实Edge浏览器（端口 {cdp_port}）...")
+                await publisher.initialize_browser(use_cdp=True, cdp_port=cdp_port)
+            else:
+                logger.info("使用标准浏览器模式...")
+                await publisher.initialize_browser(use_cdp=False)
             
             login_success = False
             login_method = "unknown"
@@ -720,6 +740,37 @@ def auto_publish_toutiao(
                 }
             logger.info(f"✅ [步骤2.5/5] 合规审查通过")
             
+            # ========== 步骤 2.6: 生成文章配图 ==========
+            logger.info(f"🖼️  [步骤2.6/5] 开始生成文章配图...")
+            from app.services.content.article_image_generator import ArticleImageGenerator
+            image_generator = ArticleImageGenerator()
+            article_images_info = image_generator.generate_images_for_article(
+                title=article_title,
+                content=article_content,
+                num_images=2,
+                category=category
+            )
+            article_images = [img["file_path"] for img in article_images_info]
+            if article_images:
+                logger.info(f"✅ [步骤2.6/5] 文章配图生成成功，共 {len(article_images)} 张")
+                for i, img_path in enumerate(article_images, 1):
+                    logger.info(f"   配图{i}: {img_path}")
+            else:
+                logger.warning(f"⚠️  文章配图生成失败，将不上传配图")
+                article_images = []
+            
+            # ========== 步骤 2.7: 解析作品声明 ==========
+            import json
+            if declarations and isinstance(declarations, str):
+                try:
+                    declarations_list = json.loads(declarations)
+                    logger.info(f"✅ 作品声明解析成功: {declarations_list}")
+                except Exception as e:
+                    logger.warning(f"⚠️  作品声明解析失败: {e}，使用默认值")
+                    declarations_list = [declaration_type]
+            else:
+                declarations_list = [declaration_type]
+            
             # ========== 步骤 3: 自动发布 ==========
             logger.info(f"[步骤3/4] 开始发布文章...")
             publish_result = await publisher.publish_article(
@@ -732,6 +783,7 @@ def auto_publish_toutiao(
                 cover_style=cover_style,
                 use_template=use_template,
                 declaration_type=declaration_type,
+                declarations=declarations_list,  # ✅ 传递解析后的作品声明列表
                 article_images=article_images  # 传入文章配图
             )
             

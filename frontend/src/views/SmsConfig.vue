@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="sms-config">
     <el-row :gutter="20">
       <!-- SMS平台配置 -->
@@ -151,7 +151,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -203,7 +203,7 @@ const verificationLogs = ref<any[]>([
 const saveSmsConfig = async () => {
   saving.value = true
   try {
-    await axios.post(`${API_BASE_URL}/sms/config`, smsConfig.value)
+    await apiClient.post(`${API_BASE_URL}/sms/config`, smsConfig.value)
     ElMessage.success('SMS配置保存成功')
   } catch (error) {
     console.error('保存失败:', error)
@@ -216,7 +216,7 @@ const saveSmsConfig = async () => {
 // 测试连接
 const testSmsConnection = async () => {
   try {
-    await axios.post(`${API_BASE_URL}/sms/test-connection`)
+    await apiClient.post(`${API_BASE_URL}/sms/test-connection`)
     ElMessage.success('连接测试成功')
   } catch (error) {
     console.error('连接失败:', error)
@@ -236,7 +236,7 @@ const fetchPhoneRecords = async () => {
     if (filters.value.platform) params.platform = filters.value.platform
     if (filters.value.status) params.status = filters.value.status
 
-    const response = await axios.get(`${API_BASE_URL}/sms/phone-records`, { params })
+    const response = await apiClient.get(`${API_BASE_URL}/sms/phone-records`, { params })
     phoneRecords.value = response.data.records
     pagination.value.total = response.data.total
   } catch (error) {

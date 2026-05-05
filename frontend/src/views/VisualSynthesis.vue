@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="visual-synthesis">
     <el-row :gutter="20">
       <!-- 封面生成 -->
@@ -168,7 +168,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -222,7 +222,7 @@ const generateCover = async () => {
     formData.append('platform', coverForm.value.platform)
     formData.append('title', coverForm.value.title)
 
-    const response = await axios.post(`${API_BASE_URL}/content/generate-cover`, formData, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/generate-cover`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 
@@ -291,7 +291,7 @@ const applySubtitles = async () => {
     formData.append('video', subtitleVideoFile.value)
     formData.append('subtitles', JSON.stringify(subtitles.value))
 
-    const response = await axios.post(`${API_BASE_URL}/content/add-subtitles`, formData, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/add-subtitles`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 
@@ -317,7 +317,7 @@ const matchBGM = async () => {
     formData.append('video', bgmVideoFile.value)
     formData.append('platform', 'douyin')
 
-    const response = await axios.post(`${API_BASE_URL}/content/match-bgm`, formData, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/match-bgm`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="alert-center">
     <el-row :gutter="20">
       <!-- 报警配置 -->
@@ -202,7 +202,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -251,7 +251,7 @@ const pagination = ref({
 const saveEmailConfig = async () => {
   saving.value = true
   try {
-    await axios.post(`${API_BASE_URL}/alerts/config/email`, emailConfig.value)
+    await apiClient.post(`${API_BASE_URL}/alerts/config/email`, emailConfig.value)
     ElMessage.success('邮件配置保存成功')
   } catch (error) {
     console.error('保存失败:', error)
@@ -265,7 +265,7 @@ const saveEmailConfig = async () => {
 const saveDingtalkConfig = async () => {
   saving.value = true
   try {
-    await axios.post(`${API_BASE_URL}/alerts/config/dingtalk`, dingtalkConfig.value)
+    await apiClient.post(`${API_BASE_URL}/alerts/config/dingtalk`, dingtalkConfig.value)
     ElMessage.success('钉钉配置保存成功')
   } catch (error) {
     console.error('保存失败:', error)
@@ -278,7 +278,7 @@ const saveDingtalkConfig = async () => {
 // 测试邮件
 const testEmailAlert = async () => {
   try {
-    await axios.post(`${API_BASE_URL}/alerts/test/email`)
+    await apiClient.post(`${API_BASE_URL}/alerts/test/email`)
     ElMessage.success('测试邮件已发送')
   } catch (error) {
     console.error('发送失败:', error)
@@ -289,7 +289,7 @@ const testEmailAlert = async () => {
 // 测试钉钉
 const testDingtalkAlert = async () => {
   try {
-    await axios.post(`${API_BASE_URL}/alerts/test/dingtalk`)
+    await apiClient.post(`${API_BASE_URL}/alerts/test/dingtalk`)
     ElMessage.success('测试消息已发送')
   } catch (error) {
     console.error('发送失败:', error)
@@ -309,7 +309,7 @@ const fetchAlertHistory = async () => {
     if (filters.value.type) params.type = filters.value.type
     if (filters.value.status) params.status = filters.value.status
 
-    const response = await axios.get(`${API_BASE_URL}/alerts/history`, { params })
+    const response = await apiClient.get(`${API_BASE_URL}/alerts/history`, { params })
     alertHistory.value = response.data.alerts
     pagination.value.total = response.data.total
   } catch (error) {

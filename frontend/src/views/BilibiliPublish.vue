@@ -142,7 +142,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import ComplianceCheckDialog from '../components/ComplianceCheckDialog.vue'
 import { checkContentCompliance } from '../api/compliance'
 
@@ -190,8 +190,8 @@ const handleLogin = async () => {
 
   loading.value = true
   try {
-    const response = await axios.post(
-      'http://localhost:8000/api/v1/accounts/login',
+    const response = await apiClient.post(
+      '/accounts/login',
       null,
       {
         params: {
@@ -268,8 +268,8 @@ const executePublish = async () => {
   try {
     const data = pendingPublishData.value || publishForm.value
     
-    const response = await axios.post(
-      'http://localhost:8000/api/v1/content/bilibili/publish',
+    const response = await apiClient.post(
+      '/content/bilibili/publish',
       null,
       {
         params: {

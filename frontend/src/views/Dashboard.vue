@@ -91,10 +91,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 
 interface DashboardStats {
   accounts?: {
@@ -120,8 +118,8 @@ const stats = ref<DashboardStats>({
 
 const fetchStats = async () => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/dashboard/stats`)
-    stats.value = response.data
+    const response = await apiClient.get('/dashboard/stats')
+    stats.value = response.data.data
   } catch (error) {
     console.error('获取统计数据失败:', error)
     ElMessage.error('获取统计数据失败')

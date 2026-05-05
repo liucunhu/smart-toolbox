@@ -167,10 +167,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
-
-const API_BASE_URL = 'http://localhost:8000/api/v1'
 
 const registering = ref(false)
 const registerResult = ref<any>(null)
@@ -199,7 +197,7 @@ const handleBatchRegister = async () => {
 
   registering.value = true
   try {
-    const response = await axios.post(`${API_BASE_URL}/batch/register`, null, {
+    const response = await apiClient.post('/batch/register', null, {
       params: {
         platform: form.value.platform,
         count: form.value.count,
@@ -228,14 +226,15 @@ const handleBatchRegister = async () => {
 // 获取账号列表
 const fetchAccounts = async () => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/accounts/batch/list`, {
+    const response = await apiClient.get('/accounts/list', {
       params: {
-        limit: pagination.value.pageSize
+        page: pagination.value.page,
+        page_size: pagination.value.pageSize
       }
     })
 
-    accounts.value = response.data.accounts
-    pagination.value.total = response.data.total
+    accounts.value = response.data.data.items
+    pagination.value.total = response.data.data.total
   } catch (error) {
     console.error('获取账号列表失败:', error)
   }

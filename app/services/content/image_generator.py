@@ -23,11 +23,12 @@ class ImageGenerator:
             "stability_ai": self._generate_with_stability,
             "dall_e": self._generate_with_dalle,
             "midjourney": self._generate_with_midjourney,
-            "local_sd": self._generate_with_local_sd
+            "local_sd": self._generate_with_local_sd,
+            "siliconflow": self._generate_with_siliconflow  # ✅ 新增硅基流动
         }
         
-        # 默认使用Stability AI（性价比高）
-        self.default_provider = "stability_ai"
+        # 默认使用硅基流动（已配置）
+        self.default_provider = "siliconflow"
     
     async def generate_image(
         self,
@@ -297,6 +298,79 @@ class ImageGenerator:
             "status": "failed",
             "error": "Midjourney API暂未实现"
         }
+    
+    async def _generate_with_siliconflow(self, prompt: str, aspect_ratio: str) -> Dict:
+        """使用硅基流动生成图像（FLUX/SD3.5等模型）"""
+        try:
+            api_key = getattr(settings, 'SILICONFLOW_API_KEY', '')
+            image_model = getattr(settings, 'SILICONFLOW_IMAGE_MODEL', 'black-forest-labs/FLUX.1-schnell')
+            
+            if not api_key:
+                return {
+                    "status": "failed",
+                    "error": "未配置硅基流动API密钥"
+                }
+            
+            # 解析宽高比
+            width, height = self._parse_aspect_ratio(aspect_ratio)
+            
+            logger.info(f"使用硅基流动图像模型: {image_model}")
+            logger.info(f"图像尺寸: {width}x{height}")
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:  # 图像生成需要更长时间
+                response = await client.post(
+                    f"{settings.SILICONFLOW_BASE_URL}/images/generations",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": image_model,
+                        "prompt": prompt,
+                        "image_size": f"{width}*{height}",
+                        "batch_size": 1,
+                        "num_inference_steps": 30,
+                        "guidance_scale": 7.5
+                    }
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"硅基流动图像生成失败: {response.text}")
+                    return {
+                        "status": "failed",
+                        "error": f"API请求失败: {response.text}"
+                    }
+                
+                data = response.json()
+                
+                # 硅基流动返回格式: {"data": [{"url": "..."}]}
+                if "data" in data and len(data["data"]) > 0:
+                    image_url = data["data"][0]["url"]
+                    
+                    # 下载并保存图像
+                    image_response = await client.get(image_url)
+                    image_path = self._save_image(image_response.content, "siliconflow")
+                    
+                    return {
+                        "status": "success",
+                        "image_path": image_path,
+                        "image_url": f"/images/{os.path.basename(image_path)}",
+                        "prompt_used": prompt,
+                        "provider": "siliconflow",
+                        "model": image_model
+                    }
+                else:
+                    return {
+                        "status": "failed",
+                        "error": "API返回数据格式异常"
+                    }
+        
+        except Exception as e:
+            logger.error(f"硅基流动图像生成失败: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
     
     async def _generate_with_local_sd(self, prompt: str, aspect_ratio: str) -> Dict:
         """使用本地Stable Diffusion生成"""

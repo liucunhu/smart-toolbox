@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     SILICONFLOW_API_KEY: Optional[str] = None
     SILICONFLOW_BASE_URL: str = "https://api.siliconflow.cn/v1"
     SILICONFLOW_MODEL: str = "Qwen/Qwen2.5-72B-Instruct"
+    SILICONFLOW_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"  # ✅ 图像生成模型
     
     # 魔搭社区 (ModelScope)
     MODELSCOPE_API_KEY: Optional[str] = None
@@ -47,8 +48,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
-        "http://localhost:3002",  # 前端当前端口
-        "http://127.0.0.1:3002"
+        "http://localhost:3002",
+        "http://127.0.0.1:3002",
+        "http://localhost:3003",  # 前端当前端口
+        "http://127.0.0.1:3003"
     ]
     
     # 养号系统配置

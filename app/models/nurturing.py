@@ -67,7 +67,7 @@ class NurturingVideoRecord(Base):
     interactions = Column(JSON, nullable=True)  # ["like", "comment", ...]
     
     # 关联
-    session = relationship("NurturingSession", back_populates="video_records")
+    session = relationship("NurturingSession", back_populates="video_records")", cascade="all, delete-orphan")
     
     created_at = Column(DateTime, default=datetime.utcnow)
 

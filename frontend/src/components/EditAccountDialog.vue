@@ -86,7 +86,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { InfoFilled, Check } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 
 interface AccountData {
   id: number
@@ -143,8 +143,8 @@ const handleSave = async () => {
 
     saving.value = true
     try {
-      const response = await axios.put(
-        `http://localhost:8000/api/v1/accounts/${formData.id}`,
+      const response = await apiClient.put(
+        `/accounts/${formData.id}`,
         null,
         {
           params: {

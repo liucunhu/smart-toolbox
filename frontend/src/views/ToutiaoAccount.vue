@@ -97,6 +97,21 @@
               </el-select>
             </el-form-item>
 
+            <el-form-item label="作品声明">
+              <el-checkbox-group v-model="publishForm.declarations">
+                <el-checkbox value="引用ai"> 引用ai</el-checkbox>
+                <el-checkbox value="取材网络">🌐 取材网络</el-checkbox>
+                <el-checkbox value="引用站内">📑 引用站内</el-checkbox>
+                <el-checkbox value="个人观点">💭 个人观点，仅供参考</el-checkbox>
+                <el-checkbox value="虚构演绎">🎭 虚构演绎，故事经历</el-checkbox>
+                <el-checkbox value="投资观点"> 投资观点，仅供参考</el-checkbox>
+                <el-checkbox value="健康医疗"> 健康医疗分享，仅供参考</el-checkbox>
+              </el-checkbox-group>
+              <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                 请根据文章内容勾选相应的声明选项（可多选）
+              </div>
+            </el-form-item>
+
             <el-form-item label="封面图片">
               <el-upload
                 action="#"
@@ -125,7 +140,7 @@
                 🚀 一键发布（AI生成+自动发布）
               </el-button>
               <el-text type="info" size="small" style="margin-left: 10px;">
-                AI会根据主题自动生成文章内容并发布
+                AI会根据主题自动生成文章内容、封面图并发布
               </el-text>
             </el-form-item>
           </el-form>
@@ -181,7 +196,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import ComplianceCheckDialog from '../components/ComplianceCheckDialog.vue'
 import { checkContentCompliance, type ContentComplianceResponse } from '../api/compliance'
 
@@ -208,7 +223,8 @@ const form = ref({
 
 const publishForm = ref({
   topic: '',
-  category: '科技'
+  category: '科技',
+  declarations: [] as string[]  // ✅ 作品声明（多选）
 })
 
 const coverFile = ref<File | null>(null)
@@ -241,8 +257,8 @@ const handleLogin = async () => {
 
   loading.value = true
   try {
-    const response = await axios.post(
-      'http://localhost:8000/api/v1/accounts/toutiao/login',
+    const response = await apiClient.post(
+      '/accounts/toutiao/login',
       null,
       {
         params: {
@@ -291,79 +307,45 @@ const handleAutoPublish = async () => {
     return
   }
 
-  // 步骤1: 显示加载状态
-  complianceDialog.value?.showLoading()
-
-  try {
-    // 步骤2: 调用合规审查
-    const complianceResult = await checkContentCompliance({
-      title: publishForm.value.topic,
-      content: `关于${publishForm.value.topic}的文章内容`,
-      platform: 'toutiao'
-    })
-    
-    // 步骤3: 显示结果
-    complianceDialog.value?.hideLoading(complianceResult)
-    
-    if (complianceResult.passed) {
-      // 审查通过，直接发布
-      await executePublish()
-    } else {
-      // 审查失败，保存待发布数据
-      pendingPublishData.value = { ...publishForm.value }
-    }
-  } catch (error: any) {
-    console.error('合规审查失败:', error)
-    complianceDialog.value?.hideLoading({
-      passed: false,
-      error: '合规审查服务异常，请稍后重试',
-      violations: []
-    })
+  // 检查是否已登录
+  if (!currentAccountId.value) {
+    ElMessage.warning('请先登录头条账号')
+    return
   }
-}
 
-/**
- * 执行发布
- */
-const executePublish = async () => {
   publishing.value = true
   try {
-    const data = pendingPublishData.value || publishForm.value
-    
-    // 检查是否已登录
-    if (!currentAccountId.value) {
-      ElMessage.warning('请先登录头条账号')
-      publishing.value = false
-      return
-    }
-    
-    const response = await axios.post(
-      'http://localhost:8000/api/v1/content/toutiao/publish',
+    // ✅ 调用一键全自动发布接口（包含AI生成文章+封面图）
+    const response = await apiClient.post(
+      '/content/toutiao/auto_publish',
       null,
       {
         params: {
           account_id: currentAccountId.value,
-          title: data.topic,
-          content: `AI自动生成的关于${data.topic}的文章内容`,
-          category: data.category,
-          cover_image_path: data.coverImagePath,
-          // 🆕 传递用户名密码，用于智能登录或自动创建账号
+          topic: publishForm.value.topic,
           username: form.value.username,
-          password: form.value.password
+          password: form.value.password,
+          category: publishForm.value.category,
+          cover_image_path: coverPreview.value || null,  // ✅ 传递封面图路径
+          auto_generate_cover: !coverPreview.value,  // ✅ 如果没有自定义封面，则自动生成
+          cover_style: 'modern',
+          use_cdp: true,              // ✅ 使用CDP模式
+          cdp_port: 9222,
+          declarations: JSON.stringify(publishForm.value.declarations),  // ✅ 使用用户选择的声明（多选）
+          article_images: []  // ✅ 文章配图（暂时为空，后续可扩展）
         }
       }
     )
     
     if (response.data.status === 'success') {
       publishResult.value = response.data
-      ElMessage.success('🎉 文章发布成功！')
-      pendingPublishData.value = null
+      ElMessage.success(`🎉 文章发布成功！\n标题：${response.data.article_title}`)
       publishForm.value.topic = ''
       coverFile.value = null
       coverPreview.value = ''
     } else {
       publishResult.value = response.data
-      ElMessage.error('❌ 发布失败：' + (response.data.message || '未知错误'))
+      ElMessage.error('❌ 发布失败：' + (response.data.error || response.data.message || '未知错误'))
     }
   } catch (error: any) {
     console.error('发布失败:', error)
@@ -388,24 +370,14 @@ const handleRetryCompliance = () => {
  * 修改内容
  */
 const handleModifyContent = () => {
-  ElMessage.info('请修改文章内容后重新提交')
-  complianceDialog.value?.showResult({
-    passed: false,
-    error: '请修改内容后重新检查',
-    violations: []
-  })
+  ElMessage.info('请修改内容后重新提交')
 }
 
 /**
  * 确认发布
  */
 const handleConfirmPublish = () => {
-  complianceDialog.value?.showResult({
-    passed: true
-  })
-  setTimeout(() => {
-    executePublish()
-  }, 500)
+  ElMessage.success('确认发布')
 }
 
 /**

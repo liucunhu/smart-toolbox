@@ -89,7 +89,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import EditAccountDialog from '../components/EditAccountDialog.vue'
 import DeleteAccountDialog from '../components/DeleteAccountDialog.vue'
 
@@ -146,7 +146,7 @@ const formatTime = (time: string) => {
 const loadAccounts = async () => {
   loading.value = true
   try {
-    const response = await axios.get('http://localhost:8000/api/v1/accounts/list', {
+    const response = await apiClient.get('/accounts/list', {
       params: {
         page: currentPage.value,
         page_size: pageSize.value

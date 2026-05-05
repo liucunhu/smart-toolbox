@@ -32,6 +32,7 @@ def register_account_task(self, account_id: int, phone: str, code: str, platform
         if result["status"] == "success":
             account.status = AccountStatusEnum.NURTURING
             # 此处应保存 cookies 到数据库
+            db.commit()  # ✅ 提交事务
             logger.info(f"账号 ID: {account_id} 注册成功，进入养号阶段")
         else:
             raise Exception(result.get("error", "Unknown error"))
@@ -39,6 +40,7 @@ def register_account_task(self, account_id: int, phone: str, code: str, platform
         return {"status": "success", "account_id": account_id}
 
     except Exception as exc:
+        db.rollback()  # ✅ 异常时回滚
         logger.error(f"注册任务失败: {str(exc)}")
         # 指数退避重试：60s, 120s, 240s
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))

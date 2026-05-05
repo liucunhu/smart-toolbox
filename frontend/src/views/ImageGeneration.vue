@@ -187,10 +187,8 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
-
-const API_BASE_URL = 'http://localhost:8000/api/v1'
 
 // 单张生成
 const generating = ref(false)
@@ -219,7 +217,7 @@ const generateSingleImage = async () => {
 
   generating.value = true
   try {
-    const response = await axios.post(`${API_BASE_URL}/content/generate-image`, null, {
+    const response = await apiClient.post('/content/generate-image', null, {
       params: {
         prompt: singleForm.value.prompt,
         style: singleForm.value.style,
@@ -253,7 +251,7 @@ const generateArticleImages = async () => {
   articleResults.value = []
 
   try {
-    const response = await axios.post(`${API_BASE_URL}/content/generate-article-images`, null, {
+    const response = await apiClient.post('/content/generate-article-images', null, {
       params: {
         article_content: articleForm.value.content,
         num_images: articleForm.value.num_images,

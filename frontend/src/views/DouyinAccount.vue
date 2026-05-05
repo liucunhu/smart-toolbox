@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="douyin-account">
     <el-card>
       <template #header>
@@ -84,7 +84,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import apiClient from '../utils/api'
 
 const loading = ref(false)
 const loginResult = ref<any>(null)
@@ -111,7 +111,7 @@ const handleLogin = async () => {
 
   loading.value = true
   try {
-    const response = await axios.post('http://localhost:8000/api/v1/accounts/douyin/login', null, {
+    const response = await apiClient.post('/accounts/douyin/login', null, {
       params: {
         account_id: form.value.accountId,
         username: form.value.username,
@@ -142,7 +142,7 @@ const handlePublish = async () => {
 
   publishing.value = true
   try {
-    const response = await axios.post('http://localhost:8000/api/v1/content/douyin/publish', null, {
+    const response = await apiClient.post('/content/douyin/publish', null, {
       params: {
         account_id: publishForm.value.accountId,
         title: publishForm.value.title,

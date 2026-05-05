@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="hot-trend-monitor">
     <el-row :gutter="20">
       <!-- 平台选择与热搜展示 -->
@@ -140,7 +140,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -157,7 +157,7 @@ const injectedResult = ref<any>(null)
 const fetchHotTrends = async () => {
   loading.value = true
   try {
-    const response = await axios.get(`${API_BASE_URL}/content/hot-trends`, {
+    const response = await apiClient.get(`${API_BASE_URL}/content/hot-trends`, {
       params: { platform: selectedPlatform.value, count: 20 }
     })
     // 后端返回格式: { platform, total, hot_topics, updated_at }
@@ -202,7 +202,7 @@ const handleInject = async () => {
 
   injecting.value = true
   try {
-    const response = await axios.post(`${API_BASE_URL}/content/inject-hot-trend`, {
+    const response = await apiClient.post(`${API_BASE_URL}/content/inject-hot-trend`, {
       script: originalScript.value,
       platform: selectedPlatform.value,
       keywords: selectedKeywords.value

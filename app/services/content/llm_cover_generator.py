@@ -23,7 +23,7 @@ class LLMCoverGenerator:
             self.client = OpenAI(
                 api_key=settings.SILICONFLOW_API_KEY,
                 base_url=settings.SILICONFLOW_BASE_URL,
-                timeout=30.0  # ★★★ 客户端级别超时 ★★★
+                timeout=60.0  # ✅ 增加到60秒超时，适应硅基流动API响应速度
             )
             self.model = settings.SILICONFLOW_MODEL
         elif provider == "modelscope":
@@ -74,7 +74,7 @@ class LLMCoverGenerator:
             start_time = time.time()
             
             prompt = f"""
-你是一位专业的内容视觉设计师。请分析以下文章，为它设计一个吸引人的封面图。
+你是一位专业的内容视觉设计师，擅长设计今日头条爆款封面图。
 
 文章标题: {title}
 文章分类: {category}
@@ -82,11 +82,15 @@ class LLMCoverGenerator:
 
 请返回JSON格式的设计方案，包含以下字段：
 1. keywords: 3-5个核心关键词（用于封面文字）
-2. emotion: 情感基调（positive/neutral/professional/energetic）
-3. visual_style: 视觉风格（modern简约现代/tech科技感/warm温暖清新/bold大胆醒目/professional专业稳重）
-4. color_scheme: 配色方案（blue科技蓝/orange活力橙/green清新绿/purple优雅紫/red热情红/dark深邃黑）
-5. design_elements: 3-5个视觉元素建议（如图标、图形、背景纹理等）
-6. cover_prompt: 一段详细的封面设计提示词（英文，用于指导设计）
+2. emotion: 情感基调（positive/neutral/professional/energetic/mysterious）
+3. visual_style: 视觉风格（modern简约现代/tech科技感/warm温暖清新/bold大胆醒目/professional专业稳重/dramatic戏剧化）
+4. color_scheme: 配色方案（blue科技蓝/orange活力橙/green清新绿/purple优雅紫/red热情红/dark深邃黑/golden金色奢华）
+5. design_elements: 5-8个具体视觉元素建议（如：渐变背景、光效、几何图形、图标、纹理、粒子效果、3D元素等）
+6. cover_prompt: 一段详细的封面设计提示词（英文，用于指导设计），要求：
+   - 描述具体的视觉效果（光影、质感、层次）
+   - 说明构图方式（居中、三分法、对角线等）
+   - 强调吸引眼球的元素
+   - 适合头条用户审美
 
 只返回JSON，不要其他说明文字。示例：
 {{
@@ -94,8 +98,8 @@ class LLMCoverGenerator:
   "emotion": "professional",
   "visual_style": "tech",
   "color_scheme": "blue",
-  "design_elements": ["渐变背景", "科技线条", "数据图表图标"],
-  "cover_prompt": "A modern tech-themed cover with gradient blue background, featuring abstract data visualization elements and clean typography"
+  "design_elements": ["深蓝渐变背景", "发光科技线条", "数据流粒子效果", "3D立体图标", "半透明几何图形", "动态光效"],
+  "cover_prompt": "A stunning tech-themed cover with deep blue gradient background, featuring glowing circuit lines, floating data particles, 3D holographic icons, and dynamic light effects. Center composition with layered elements creating depth. Professional yet eye-catching design perfect for social media."
 }}
 """
             
@@ -106,8 +110,8 @@ class LLMCoverGenerator:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                timeout=30,  # ★★★ 添加30秒超时 ★★★
-                max_tokens=500  # ★★★ 限制返回长度，加快响应 ★★★
+                timeout=60.0,  # ✅ 请求级别也设置60秒超时
+                max_tokens=500  # ✅ 限制返回长度，加快响应
             )
             
             elapsed = time.time() - start_time
@@ -287,8 +291,8 @@ class LLMCoverGenerator:
             raise
     
     def _draw_modern_style(self, draw, primary_color, secondary_color, design_plan):
-        """现代风格"""
-        # 渐变背景效果（简化版）
+        """现代风格 - 头条爆款设计"""
+        # 渐变背景效果（增强版）
         for y in range(self.cover_height):
             ratio = y / self.cover_height
             r = int(primary_color[0] * (1 - ratio) + secondary_color[0] * ratio)
@@ -296,27 +300,55 @@ class LLMCoverGenerator:
             b = int(primary_color[2] * (1 - ratio) + secondary_color[2] * ratio)
             draw.line([(0, y), (self.cover_width, y)], fill=(r, g, b))
         
-        # 装饰性圆形
-        draw.ellipse([100, 100, 300, 300], fill=secondary_color + (100,), outline=None)
-        draw.ellipse([self.cover_width - 250, self.cover_height - 250, 
-                     self.cover_width - 50, self.cover_height - 50], 
-                    fill=secondary_color + (80,))
+        # 多个装饰性圆形（不同大小和透明度，增加层次感）
+        draw.ellipse([80, 80, 280, 280], fill=secondary_color + (80,))
+        draw.ellipse([self.cover_width - 300, self.cover_height - 300, 
+                     self.cover_width - 100, self.cover_height - 100], 
+                    fill=secondary_color + (60,))
+        draw.ellipse([self.cover_width // 2 - 100, 50, self.cover_width // 2 + 100, 250], 
+                    fill=primary_color + (40,))
+        
+        # 添加动态线条（从左上到右下）
+        for i in range(3):
+            offset = i * 50
+            draw.line([(offset, 0), (self.cover_width, self.cover_height - offset)], 
+                     fill=secondary_color + (50,), width=3)
     
     def _draw_tech_style(self, draw, primary_color, secondary_color, design_plan):
-        """科技风格"""
-        # 深色背景
-        draw.rectangle([0, 0, self.cover_width, self.cover_height], fill=(10, 15, 30))
+        """科技风格 - 头条爆款设计"""
+        # 深色渐变背景
+        for y in range(self.cover_height):
+            ratio = y / self.cover_height
+            r = int(10 + ratio * 20)
+            g = int(15 + ratio * 25)
+            b = int(30 + ratio * 40)
+            draw.line([(0, y), (self.cover_width, y)], fill=(r, g, b))
         
-        # 网格线
-        for x in range(0, self.cover_width, 50):
-            draw.line([(x, 0), (x, self.cover_height)], fill=primary_color + (30,))
-        for y in range(0, self.cover_height, 50):
-            draw.line([(0, y), (self.cover_width, y)], fill=primary_color + (30,))
+        # 发光网格线（更密集）
+        for x in range(0, self.cover_width, 40):
+            alpha = int(40 + 20 * (x % 80 == 0))
+            draw.line([(x, 0), (x, self.cover_height)], fill=primary_color[:3] + (alpha,))
+        for y in range(0, self.cover_height, 40):
+            alpha = int(40 + 20 * (y % 80 == 0))
+            draw.line([(0, y), (self.cover_width, y)], fill=primary_color[:3] + (alpha,))
         
-        # 科技线条
-        draw.line([(0, 100), (self.cover_width, 200)], fill=secondary_color, width=2)
-        draw.line([(0, self.cover_height - 100), (self.cover_width, self.cover_height - 200)], 
-                 fill=secondary_color, width=2)
+        # 多条科技线条（对角线和曲线效果）
+        for i in range(5):
+            offset = i * 30
+            draw.line([(0, 100 + offset), (self.cover_width, 150 + offset)], 
+                     fill=secondary_color, width=2)
+            draw.line([(0, self.cover_height - 100 - offset), 
+                      (self.cover_width, self.cover_height - 150 - offset)], 
+                     fill=secondary_color, width=2)
+        
+        # 半透明几何图形（增加层次感）
+        from PIL import ImageDraw as ID
+        draw.polygon([(100, 100), (300, 150), (250, 350), (50, 300)], 
+                    fill=secondary_color + (40,))
+        draw.ellipse([self.cover_width - 300, 100, self.cover_width - 100, 300], 
+                    fill=primary_color + (30,))
+        draw.rectangle([100, self.cover_height - 250, 350, self.cover_height - 100], 
+                      fill=secondary_color + (35,))
     
     def _draw_warm_style(self, draw, primary_color, secondary_color, design_plan):
         """温暖风格"""
@@ -332,23 +364,52 @@ class LLMCoverGenerator:
         draw.rounded_rectangle([50, 50, 200, 200], radius=20, fill=secondary_color + (100,))
     
     def _draw_bold_style(self, draw, primary_color, secondary_color, design_plan):
-        """大胆风格"""
-        # 对角线分割
+        """大胆风格 - 头条爆款设计"""
+        # 对角线分割（增强版，添加渐变效果）
         draw.polygon([(0, 0), (self.cover_width, 0), (0, self.cover_height)], fill=primary_color)
         draw.polygon([(self.cover_width, 0), (self.cover_width, self.cover_height), 
                      (0, self.cover_height)], fill=secondary_color)
+        
+        # 添加中心圆形强调
+        center_x, center_y = self.cover_width // 2, self.cover_height // 2
+        draw.ellipse([center_x - 150, center_y - 150, center_x + 150, center_y + 150], 
+                    fill=(255, 255, 255, 60))
+        
+        # 添加动态斜线
+        for i in range(4):
+            offset = i * 80
+            draw.line([(offset, 0), (offset + 200, self.cover_height)], 
+                     fill=(255, 255, 255, 40), width=5)
     
     def _draw_professional_style(self, draw, primary_color, secondary_color, design_plan):
-        """专业风格"""
-        # 简洁纯色背景
-        draw.rectangle([0, 0, self.cover_width, self.cover_height], fill=primary_color)
+        """专业风格 - 头条爆款设计"""
+        # 渐变背景（从深到浅）
+        for y in range(self.cover_height):
+            ratio = y / self.cover_height
+            r = int(primary_color[0] * (1 - ratio * 0.3))
+            g = int(primary_color[1] * (1 - ratio * 0.3))
+            b = int(primary_color[2] * (1 - ratio * 0.3))
+            draw.line([(0, y), (self.cover_width, y)], fill=(r, g, b))
         
-        # 底部色块
-        draw.rectangle([0, self.cover_height - 150, self.cover_width, self.cover_height], 
-                      fill=secondary_color)
+        # 底部色块（增强版，添加渐变）
+        for y in range(150):
+            ratio = y / 150
+            r = int(secondary_color[0] * (1 - ratio * 0.5))
+            g = int(secondary_color[1] * (1 - ratio * 0.5))
+            b = int(secondary_color[2] * (1 - ratio * 0.5))
+            draw.line([(0, self.cover_height - 150 + y), 
+                      (self.cover_width, self.cover_height - 150 + y)], 
+                     fill=(r, g, b))
+        
+        # 添加装饰线条
+        draw.line([(50, 100), (self.cover_width - 50, 100)], 
+                 fill=secondary_color + (100,), width=3)
+        draw.line([(50, self.cover_height - 180), 
+                  (self.cover_width - 50, self.cover_height - 180)], 
+                 fill=secondary_color + (100,), width=2)
     
     def _add_title_text(self, draw, title, design_plan):
-        """添加标题文字"""
+        """添加标题文字 - 头条爆款设计"""
         try:
             # 尝试使用中文字体
             font_paths = [
@@ -357,30 +418,66 @@ class LLMCoverGenerator:
                 "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",  # Linux文泉驿
             ]
             
-            font = None
+            font_large = None
+            font_medium = None
             for font_path in font_paths:
                 if os.path.exists(font_path):
                     try:
-                        font = ImageFont.truetype(font_path, 60)
+                        font_large = ImageFont.truetype(font_path, 72)  # 加大字号
+                        font_medium = ImageFont.truetype(font_path, 48)
                         break
                     except:
                         continue
             
-            if not font:
-                font = ImageFont.load_default()
+            if not font_large:
+                font_large = ImageFont.load_default()
+                font_medium = font_large
             
-            # 计算文字位置（居中）
-            bbox = draw.textbbox((0, 0), title, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            
-            x = (self.cover_width - text_width) // 2
-            y = (self.cover_height - text_height) // 2
-            
-            # 添加文字阴影效果
-            shadow_offset = 3
-            draw.text((x + shadow_offset, y + shadow_offset), title, fill=(0, 0, 0), font=font)
-            draw.text((x, y), title, fill=(255, 255, 255), font=font)
+            # 处理长标题（分行显示）
+            if len(title) > 20:
+                mid_point = len(title) // 2
+                # 找到最近的空格或标点
+                split_pos = mid_point
+                for i in range(mid_point - 5, mid_point + 5):
+                    if 0 <= i < len(title) and title[i] in [' ', ',', '，', '.', '。']:
+                        split_pos = i + 1
+                        break
+                
+                line1 = title[:split_pos].strip()
+                line2 = title[split_pos:].strip()
+                
+                # 计算位置（垂直居中）
+                bbox1 = draw.textbbox((0, 0), line1, font=font_large)
+                bbox2 = draw.textbbox((0, 0), line2, font=font_large)
+                text_width = max(bbox1[2] - bbox1[0], bbox2[2] - bbox2[0])
+                total_height = (bbox1[3] - bbox1[1]) + (bbox2[3] - bbox2[1]) + 20
+                
+                x = (self.cover_width - text_width) // 2
+                y = (self.cover_height - total_height) // 2
+                
+                # 添加文字阴影和描边效果（增强可读性）
+                shadow_offset = 5
+                # 第一行
+                draw.text((x + shadow_offset, y + shadow_offset), line1, fill=(0, 0, 0, 180), font=font_large)
+                draw.text((x, y), line1, fill=(255, 255, 255), font=font_large)
+                # 第二行
+                draw.text((x + shadow_offset, y + (bbox1[3] - bbox1[1]) + 20 + shadow_offset), 
+                         line2, fill=(0, 0, 0, 180), font=font_large)
+                draw.text((x, y + (bbox1[3] - bbox1[1]) + 20), 
+                         line2, fill=(255, 255, 255), font=font_large)
+            else:
+                # 短标题，单行显示
+                bbox = draw.textbbox((0, 0), title, font=font_large)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                
+                x = (self.cover_width - text_width) // 2
+                y = (self.cover_height - text_height) // 2
+                
+                # 添加文字阴影和描边效果
+                shadow_offset = 5
+                draw.text((x + shadow_offset, y + shadow_offset), title, fill=(0, 0, 0, 180), font=font_large)
+                draw.text((x, y), title, fill=(255, 255, 255), font=font_large)
             
         except Exception as e:
             logger.warning(f"添加标题文字失败: {e}")
