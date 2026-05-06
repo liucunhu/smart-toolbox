@@ -26,12 +26,18 @@ class Settings(BaseSettings):
     SILICONFLOW_API_KEY: Optional[str] = None
     SILICONFLOW_BASE_URL: str = "https://api.siliconflow.cn/v1"
     SILICONFLOW_MODEL: str = "Qwen/Qwen2.5-72B-Instruct"
-    SILICONFLOW_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"  # ✅ 图像生成模型
+    SILICONFLOW_IMAGE_MODEL: str = "Tongyi-MAI/Z-Image-Turbo"  # 图像生成模型（通义千问加速版）
+    
+    # 阿里百炼 (DashScope) - ✅ 新增
+    DASHSCOPE_API_KEY: Optional[str] = None
+    DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
+    DASHSCOPE_IMAGE_MODEL: str = "wanx2.1-t2i-turbo"  # 通义万相极速版（性价比高）
     
     # 魔搭社区 (ModelScope)
     MODELSCOPE_API_KEY: Optional[str] = None
     MODELSCOPE_BASE_URL: str = "https://api-inference.modelscope.cn/v1"
     MODELSCOPE_MODEL: str = "Qwen/Qwen2.5-72B-Instruct"
+    MODELSCOPE_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"  # ✅ 图像生成模型（FLUX.1-schnell）
     
     # DeepSeek
     DEEPSEEK_API_KEY: Optional[str] = None

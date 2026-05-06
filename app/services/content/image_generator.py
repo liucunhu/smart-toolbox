@@ -20,15 +20,11 @@ class ImageGenerator:
         
         # 支持的图像生成提供商
         self.providers = {
-            "stability_ai": self._generate_with_stability,
-            "dall_e": self._generate_with_dalle,
-            "midjourney": self._generate_with_midjourney,
-            "local_sd": self._generate_with_local_sd,
-            "siliconflow": self._generate_with_siliconflow  # ✅ 新增硅基流动
+            "modelscope": self._generate_with_modelscope  # ✅ 仅使用魔搭社区
         }
         
-        # 默认使用硅基流动（已配置）
-        self.default_provider = "siliconflow"
+        # ✅ 强制使用魔搭社区，不做降级
+        self.default_provider = "modelscope"
     
     async def generate_image(
         self,
@@ -300,10 +296,11 @@ class ImageGenerator:
         }
     
     async def _generate_with_siliconflow(self, prompt: str, aspect_ratio: str) -> Dict:
-        """使用硅基流动生成图像（FLUX/SD3.5等模型）"""
+        """使用硅基流动生成图像（Tongyi-MAI/Z-Image-Turbo等模型）"""
         try:
             api_key = getattr(settings, 'SILICONFLOW_API_KEY', '')
-            image_model = getattr(settings, 'SILICONFLOW_IMAGE_MODEL', 'black-forest-labs/FLUX.1-schnell')
+            # ★★★ 使用Tongyi-MAI/Z-Image-Turbo模型（通义千问加速版，2026年5月实测可用）★★★
+            image_model = 'Tongyi-MAI/Z-Image-Turbo'
             
             if not api_key:
                 return {
@@ -327,10 +324,9 @@ class ImageGenerator:
                     json={
                         "model": image_model,
                         "prompt": prompt,
-                        "image_size": f"{width}*{height}",
+                        "image_size": f"{width}x{height}",  # 使用x而不是*
                         "batch_size": 1,
-                        "num_inference_steps": 30,
-                        "guidance_scale": 7.5
+                        "num_inference_steps": 8  # Z-Image-Turbo只需8步
                     }
                 )
                 
@@ -372,6 +368,145 @@ class ImageGenerator:
                 "error": str(e)
             }
     
+    async def _generate_with_dashscope(self, prompt: str, aspect_ratio: str) -> Dict:
+        """使用阿里百炼（DashScope）生成图像（通义万相）"""
+        try:
+            api_key = getattr(settings, 'DASHSCOPE_API_KEY', '')
+            # 使用通义万相极速版（性价比高，0.14元/张）
+            # 必须是图像生成模型，不能使用LLM模型
+            image_model = 'wanx2.1-t2i-turbo'  # 固定使用通义万相极速版
+            
+            if not api_key:
+                return {
+                    "status": "failed",
+                    "error": "未配置阿里百炼API密钥"
+                }
+            
+            # 解析宽高比
+            width, height = self._parse_aspect_ratio(aspect_ratio)
+            
+            logger.info(f"使用阿里百炼图像模型: {image_model}")
+            logger.info(f"图像尺寸: {width}x{height}")
+            
+            # 阿里百炼使用异步API，需要先创建任务，再查询结果
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                # 步骤1: 创建图像生成任务
+                # 正确的URL: https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis
+                response = await client.post(
+                    "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "X-DashScope-Async": "enable"  # 必须设置为enable
+                    },
+                    json={
+                        "model": image_model,
+                        "input": {
+                            "prompt": prompt
+                        },
+                        "parameters": {
+                            "size": f"{width}*{height}",  # 阿里百炼使用*分隔
+                            "n": 1  # 生成1张
+                        }
+                    }
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"阿里百炼图像任务创建失败: {response.text}")
+                    return {
+                        "status": "failed",
+                        "error": f"API请求失败: {response.text}"
+                    }
+                
+                task_data = response.json()
+                
+                # 检查是否成功创建任务
+                if task_data.get("output", {}).get("task_id"):
+                    task_id = task_data["output"]["task_id"]
+                    logger.info(f"图像生成任务已创建: {task_id}")
+                    
+                    # 步骤2: 轮询任务状态
+                    import asyncio
+                    max_retries = 30  # 最多轮询30次
+                    retry_interval = 5  # 每次间隔5秒
+                    
+                    for i in range(max_retries):
+                        await asyncio.sleep(retry_interval)
+                        
+                        # 查询任务状态
+                        status_response = await client.get(
+                            f"{settings.DASHSCOPE_BASE_URL}/tasks/{task_id}",
+                            headers={
+                                "Authorization": f"Bearer {api_key}"
+                            }
+                        )
+                        
+                        if status_response.status_code != 200:
+                            logger.error(f"查询任务状态失败: {status_response.text}")
+                            continue
+                        
+                        status_data = status_response.json()
+                        task_status = status_data.get("output", {}).get("task_status", "")
+                        
+                        logger.info(f"任务状态: {task_status} (第{i+1}次轮询)")
+                        
+                        if task_status == "SUCCEEDED":
+                            # 任务成功，获取图像URL
+                            results = status_data.get("output", {}).get("results", [])
+                            if results and len(results) > 0:
+                                image_url = results[0].get("url")
+                                
+                                if image_url:
+                                    # 下载并保存图像
+                                    image_response = await client.get(image_url)
+                                    image_path = self._save_image(image_response.content, "dashscope")
+                                    
+                                    logger.info(f"✅ 阿里百炼图像生成成功: {image_path}")
+                                    
+                                    return {
+                                        "status": "success",
+                                        "image_path": image_path,
+                                        "image_url": f"/images/{os.path.basename(image_path)}",
+                                        "prompt_used": prompt,
+                                        "provider": "dashscope",
+                                        "model": image_model
+                                    }
+                            
+                            return {
+                                "status": "failed",
+                                "error": "任务成功但未获取到图像URL"
+                            }
+                        
+                        elif task_status == "FAILED":
+                            error_msg = status_data.get("output", {}).get("message", "未知错误")
+                            logger.error(f"❌ 图像生成任务失败: {error_msg}")
+                            return {
+                                "status": "failed",
+                                "error": f"任务失败: {error_msg}"
+                            }
+                        
+                        # 其他状态（PENDING/RUNNING）继续轮询
+                        
+                    # 超时
+                    logger.error(f"❌ 图像生成超时（{max_retries * retry_interval}秒）")
+                    return {
+                        "status": "failed",
+                        "error": f"生成超时，请稍后重试"
+                    }
+                
+                else:
+                    return {
+                        "status": "failed",
+                        "error": "API返回数据格式异常"
+                    }
+        
+        except Exception as e:
+            logger.error(f"阿里百炼图像生成失败: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
+    
     async def _generate_with_local_sd(self, prompt: str, aspect_ratio: str) -> Dict:
         """使用本地Stable Diffusion生成"""
         # TODO: 实现本地SD集成
@@ -379,6 +514,135 @@ class ImageGenerator:
             "status": "failed",
             "error": "本地Stable Diffusion暂未配置"
         }
+    
+    async def _generate_with_modelscope(self, prompt: str, aspect_ratio: str) -> Dict:
+        """使用魔搭社区（ModelScope）生成图像（FLUX.1-schnell等模型）"""
+        try:
+            api_key = getattr(settings, 'MODELSCOPE_API_KEY', '')
+            # ✅ 使用 FLUX.1-schnell 模型（魔搭社区可用，快速且质量高）
+            image_model = 'black-forest-labs/FLUX.1-schnell'
+            
+            if not api_key:
+                return {
+                    "status": "failed",
+                    "error": "未配置魔搭社区API密钥"
+                }
+            
+            # 解析宽高比
+            width, height = self._parse_aspect_ratio(aspect_ratio)
+            
+            logger.info(f"使用魔搭社区图像模型: {image_model}")
+            logger.info(f"图像尺寸: {width}x{height}")
+            
+            # ✅ 魔搭社区使用异步调用模式
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                # 步骤1: 创建异步任务
+                response = await client.post(
+                    f"{settings.MODELSCOPE_BASE_URL}/images/generations",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "X-ModelScope-Async-Mode": "true"  # ✅ 魔搭社区要求使用 "true"
+                    },
+                    json={
+                        "model": image_model,
+                        "prompt": prompt,
+                        "n": 1,
+                        "size": f"{width}x{height}"
+                    }
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"魔搭社区图像任务创建失败: {response.text}")
+                    return {
+                        "status": "failed",
+                        "error": f"API请求失败: {response.text}"
+                    }
+                
+                task_data = response.json()
+                task_id = task_data.get("task_id")
+                
+                if not task_id:
+                    return {
+                        "status": "failed",
+                        "error": f"未获取到Task ID: {task_data}"
+                    }
+                
+                logger.info(f"图像生成任务已创建: {task_id}")
+                
+                # 步骤2: 轮询任务状态
+                import asyncio
+                max_retries = 30
+                retry_interval = 5
+                
+                for i in range(max_retries):
+                    await asyncio.sleep(retry_interval)
+                    
+                    # 查询任务状态
+                    status_response = await client.get(
+                        f"{settings.MODELSCOPE_BASE_URL}/tasks/{task_id}",
+                        headers={
+                            "Authorization": f"Bearer {api_key}"
+                        }
+                    )
+                    
+                    if status_response.status_code != 200:
+                        logger.error(f"查询任务状态失败: {status_response.text}")
+                        continue
+                    
+                    status_data = status_response.json()
+                    task_status = status_data.get("task_status", "")
+                    
+                    logger.info(f"任务状态: {task_status} (第{i+1}次轮询)")
+                    
+                    if task_status == "SUCCEEDED":
+                        # 任务成功，获取图像URL
+                        results = status_data.get("results", [])
+                        if results and len(results) > 0:
+                            image_url = results[0].get("url")
+                            
+                            if image_url:
+                                # 下载并保存图像
+                                image_response = await client.get(image_url)
+                                image_path = self._save_image(image_response.content, "modelscope")
+                                
+                                logger.info(f"✅ 魔搭社区图像生成成功: {image_path}")
+                                
+                                return {
+                                    "status": "success",
+                                    "image_path": image_path,
+                                    "image_url": f"/images/{os.path.basename(image_path)}",
+                                    "prompt_used": prompt,
+                                    "provider": "modelscope",
+                                    "model": image_model
+                                }
+                        
+                        return {
+                            "status": "failed",
+                            "error": "任务成功但未获取到图像URL"
+                        }
+                    
+                    elif task_status == "FAILED":
+                        error_msg = status_data.get("message", "未知错误")
+                        logger.error(f"❌ 图像生成任务失败: {error_msg}")
+                        return {
+                            "status": "failed",
+                            "error": f"任务失败: {error_msg}"
+                        }
+                
+                # 超时
+                logger.error(f"❌ 图像生成超时（{max_retries * retry_interval}秒）")
+                return {
+                    "status": "failed",
+                    "error": f"生成超时，请稍后重试"
+                }
+        
+        except Exception as e:
+            logger.error(f"魔搭社区图像生成失败: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
     
     def _parse_aspect_ratio(self, ratio: str) -> tuple:
         """解析宽高比"""

@@ -33,5 +33,442 @@
         "engagement_score": 0.0
       }
     }
+  },
+  "article_img_12539b5d": {
+    "test_id": "article_img_12539b5d",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:36:56.194135",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_66948bf1.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_68ed9c22.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_23d4930e.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_e207d6a7": {
+    "test_id": "article_img_e207d6a7",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:38:49.719238",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_847ba72b.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_3e274b65.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_8e354ca9.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_47659c44": {
+    "test_id": "article_img_47659c44",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:40:01.345474",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_cb5a3f82.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_36b0f98c.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_36a7fdd9.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_7c1a4a0a": {
+    "test_id": "article_img_7c1a4a0a",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:40:23.651495",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_3574006d.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_a0113c0c.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_0d578d5f.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_f7259894": {
+    "test_id": "article_img_f7259894",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:40:56.894832",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_66a034cb.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_01c8de08.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_2c78bb73.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_4ede6f2f": {
+    "test_id": "article_img_4ede6f2f",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:43:40.623442",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_c08cbb71.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_53faa669.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_4fdf6a9d.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_f132c90b": {
+    "test_id": "article_img_f132c90b",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:48:14.219169",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_98859d3b.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_6b4af209.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_7272eb1f.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_874c2de9": {
+    "test_id": "article_img_874c2de9",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T09:59:20.875259",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_89b00096.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_ce0a62d3.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_3dfc88d0.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_f2653724": {
+    "test_id": "article_img_f2653724",
+    "article_title": "人工智能技术革新：深度学习如何改变未来",
+    "description": "文章配图测试: 人工智能技术革新：深度学习如何改变未来",
+    "created_at": "2026-05-05T11:42:54.600238",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_541ec677.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_fc114d8c.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
   }
 }

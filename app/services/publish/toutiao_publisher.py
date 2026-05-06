@@ -663,68 +663,36 @@ class ToutiaoPublisher:
                 if auto_generate_cover and not cover_image_path:
                     logger.info("🤖 开始AI生成封面图...")
                     
-                    # 优先使用硅基流动生成真实AI图像
+                    # ✅ 强制使用魔搭社区生成真实AI图像（不做降级）
                     try:
                         from app.services.content.image_generator import ImageGenerator
                         image_gen = ImageGenerator()
                         
                         prompt = f"{title}, {category}, 高质量专业摄影, 视觉冲击力强, 色彩鲜明, 构图精美, 4K超高清, 引人注目"
-                        logger.info(f"   使用硅基流动生成封面图...")
+                        logger.info(f"   使用魔搭社区生成封面图...")
                         logger.info(f"   提示词: {prompt}")
                         
+                        # ✅ 强制使用魔搭社区
                         result = await image_gen.generate_image(
                             prompt=prompt,
-                            aspect_ratio="16:9",
-                            provider="siliconflow"
+                            aspect_ratio="16:9"
                         )
                         
                         if result.get("status") == "success":
                             cover_image_path = result.get("image_path")
-                            logger.info(f"✅ 硅基流动封面图生成成功!")
+                            logger.info(f"✅ 魔搭社区封面图生成成功!")
                             logger.info(f"   图片路径: {cover_image_path}")
+                            logger.info(f"   提供商: {result.get('provider', 'modelscope')}")
+                            logger.info(f"   模型: {result.get('model', 'unknown')}")
                         else:
-                            logger.warning(f"⚠️  硅基流动生成失败: {result.get('error')}")
-                            raise Exception("硅基流动生成失败")
+                            # ✅ 不做降级，直接抛出异常
+                            error_msg = result.get('error', '未知错误')
+                            logger.error(f"❌ 魔搭社区图像生成失败: {error_msg}")
+                            raise Exception(f"魔搭社区图像生成失败: {error_msg}")
                     except Exception as e:
-                        logger.warning(f"硅基流动生成异常: {e}，降级使用LLM+PIL...")
-                        
-                        # 降级方案：LLM智能分析+PIL绘制
-                        try:
-                            from app.services.content.llm_cover_generator import get_llm_cover_generator
-                            llm_generator = get_llm_cover_generator()
-                            
-                            result = llm_generator.generate_cover_with_llm_analysis(
-                                title=title,
-                                content=content,
-                                category=category,
-                                style_override=cover_style if cover_style else None
-                            )
-                            
-                            if result["status"] == "success":
-                                cover_image_path = result["file_path"]
-                                design_plan = result.get("design_plan", {})
-                                logger.info(f"✅ LLM智能封面生成成功(PIL绘制)!")
-                                logger.info(f"   视觉风格: {design_plan.get('visual_style', 'N/A')}")
-                                logger.info(f"   配色方案: {design_plan.get('color_scheme', 'N/A')}")
-                            else:
-                                raise Exception("LLM封面生成失败")
-                        except Exception as e2:
-                            logger.warning(f"LLM封面生成也失败: {e2}")
-                            logger.info("   使用传统模板生成...")
-                            from app.services.content.ai_cover_generator import AICoverGenerator
-                            generator = AICoverGenerator()
-                            ai_result = generator.generate_cover(
-                                title=title,
-                                subtitle="",
-                                category=category,
-                                style=cover_style or "modern"
-                            )
-                            if ai_result["status"] == "success":
-                                cover_image_path = ai_result["file_path"]
-                                logger.info(f"✅ 传统AI封面生成成功: {ai_result['style']} 风格")
-                            else:
-                                logger.error(f"❌ 所有封面生成方案均失败: {ai_result.get('error')}")
-                                cover_image_path = None
+                        # ✅ 不做降级，直接抛出异常
+                        logger.error(f"❌ 封面图生成失败: {e}")
+                        raise
                 
                 # 如果有封面图，现在上传
                 if cover_image_path:

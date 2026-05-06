@@ -113,20 +113,80 @@
             </el-form-item>
 
             <el-form-item label="封面图片">
-              <el-upload
-                action="#"
-                :auto-upload="false"
-                :on-change="handleCoverSelect"
-                :limit="1"
-                accept="image/*"
-              >
-                <el-button size="small">选择封面图</el-button>
-                <template #tip>
-                  <div class="el-upload__tip">支持jpg/png格式，建议尺寸16:9</div>
-                </template>
-              </el-upload>
-              <div v-if="coverPreview" class="cover-preview">
-                <img :src="coverPreview" alt="封面预览" style="max-width: 200px; border-radius: 4px;" />
+              <el-checkbox v-model="publishForm.enableCover" style="margin-bottom: 10px;">
+                ️ 启用封面图
+              </el-checkbox>
+              
+              <div v-if="publishForm.enableCover">
+                <el-radio-group v-model="publishForm.coverType" style="margin-bottom: 10px;">
+                  <el-radio value="auto">🤖 AI自动生成</el-radio>
+                  <el-radio value="upload">📁 上传自定义</el-radio>
+                </el-radio-group>
+                
+                <!-- AI自动生成选项 -->
+                <div v-if="publishForm.coverType === 'auto'">
+                  <el-select v-model="publishForm.coverStyle" placeholder="选择封面风格" style="width: 100%;">
+                    <el-option label="现代科技风格" value="modern" />
+                    <el-option label="极简风格" value="minimal" />
+                    <el-option label="大胆风格" value="bold" />
+                  </el-select>
+                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                     AI会根据标题自动生成16:9比例的封面图
+                  </div>
+                </div>
+                
+                <!-- 上传自定义选项 -->
+                <div v-if="publishForm.coverType === 'upload'">
+                  <el-upload
+                    action="#"
+                    :auto-upload="false"
+                    :on-change="handleCoverSelect"
+                    :limit="1"
+                    accept="image/*"
+                  >
+                    <el-button size="small">选择封面图</el-button>
+                    <template #tip>
+                      <div class="el-upload__tip">支持jpg/png格式，建议尺寸16:9（1280x720）</div>
+                    </template>
+                  </el-upload>
+                  <div v-if="coverPreview" class="cover-preview">
+                    <img :src="coverPreview" alt="封面预览" style="max-width: 200px; border-radius: 4px;" />
+                  </div>
+                </div>
+              </div>
+              
+              <div v-else style="font-size: 12px; color: #909399;">
+                ℹ️ 不启用封面图，发布时将使用头条默认封面
+              </div>
+            </el-form-item>
+
+            <el-form-item label="文章配图">
+              <el-checkbox v-model="publishForm.enableImages" style="margin-bottom: 10px;">
+                ☑️ 启用文章配图
+              </el-checkbox>
+              
+              <div v-if="publishForm.enableImages">
+                <el-upload
+                  action="#"
+                  :auto-upload="false"
+                  :on-change="handleImageSelect"
+                  :limit="9"
+                  accept="image/*"
+                  multiple
+                  list-type="picture-card"
+                >
+                  <el-icon><Plus /></el-icon>
+                  <template #tip>
+                    <div class="el-upload__tip">最多上传9张图片，支持jpg/png格式</div>
+                  </template>
+                </el-upload>
+                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                  💡 配图将插入到文章内容中，增强视觉效果
+                </div>
+              </div>
+              
+              <div v-else style="font-size: 12px; color: #909399;">
+                ℹ️ 不启用配图，文章将只包含文字内容
               </div>
             </el-form-item>
 
@@ -196,6 +256,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import apiClient from '../utils/api'
 import ComplianceCheckDialog from '../components/ComplianceCheckDialog.vue'
 import { checkContentCompliance, type ContentComplianceResponse } from '../api/compliance'
@@ -224,11 +285,19 @@ const form = ref({
 const publishForm = ref({
   topic: '',
   category: '科技',
-  declarations: [] as string[]  // ✅ 作品声明（多选）
+  declarations: [] as string[],  // ✅ 作品声明（多选）
+  enableCover: true,  // ✅ 是否启用封面图
+  coverType: 'auto' as 'auto' | 'upload',  // ✅ 封面类型：AI自动生成或上传自定义
+  coverStyle: 'modern',  // ✅ AI封面风格
+  enableImages: false  // ✅ 是否启用文章配图
 })
 
 const coverFile = ref<File | null>(null)
 const coverPreview = ref<string>('')
+
+// ✅ 文章配图相关
+const imageFiles = ref<File[]>([])
+const imagePreviews = ref<string[]>([])
 
 const isLoggedIn = computed(() => {
   return loginResult.value?.status === 'success'
@@ -244,6 +313,20 @@ const handleCoverSelect = (file: any) => {
     coverPreview.value = e.target?.result as string
   }
   reader.readAsDataURL(file.raw)
+}
+
+/**
+ * ✅ 处理配图选择
+ */
+const handleImageSelect = (file: any, fileList: any[]) => {
+  if (file.raw) {
+    imageFiles.value.push(file.raw)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      imagePreviews.value.push(e.target?.result as string)
+    }
+    reader.readAsDataURL(file.raw)
+  }
 }
 
 /**
@@ -315,6 +398,56 @@ const handleAutoPublish = async () => {
 
   publishing.value = true
   try {
+    // ✅ 先上传文章配图（如果启用）
+    let uploadedImagePaths: string[] = []
+    if (publishForm.value.enableImages && imageFiles.value.length > 0) {
+      ElMessage.info(`正在上传 ${imageFiles.value.length} 张配图...`)
+        
+      for (const imgFile of imageFiles.value) {
+        const formData = new FormData()
+        formData.append('file', imgFile)
+          
+        const uploadResponse = await apiClient.post(
+          '/content/upload-image',
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+          
+        if (uploadResponse.data.status === 'success') {
+          uploadedImagePaths.push(uploadResponse.data.file_path)
+        }
+      }
+        
+      ElMessage.success(`✅ 配图上传完成！`)
+    }
+      
+    // ✅ 处理封面图逻辑
+    let coverImagePath: string | null = null
+    let autoGenerateCover = false
+      
+    if (publishForm.value.enableCover) {
+      if (publishForm.value.coverType === 'upload' && coverFile.value) {
+        // 上传自定义封面
+        ElMessage.info('正在上传封面图...')
+        const formData = new FormData()
+        formData.append('file', coverFile.value)
+          
+        const uploadResponse = await apiClient.post(
+          '/content/upload-image',
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+          
+        if (uploadResponse.data.status === 'success') {
+          coverImagePath = uploadResponse.data.file_path
+          ElMessage.success('✅ 封面图上传完成！')
+        }
+      } else if (publishForm.value.coverType === 'auto') {
+        // AI自动生成封面
+        autoGenerateCover = true
+      }
+    }
+      
     // ✅ 调用一键全自动发布接口（包含AI生成文章+封面图）
     const response = await apiClient.post(
       '/content/toutiao/auto_publish',
@@ -326,23 +459,27 @@ const handleAutoPublish = async () => {
           username: form.value.username,
           password: form.value.password,
           category: publishForm.value.category,
-          cover_image_path: coverPreview.value || null,  // ✅ 传递封面图路径
-          auto_generate_cover: !coverPreview.value,  // ✅ 如果没有自定义封面，则自动生成
-          cover_style: 'modern',
+          cover_image_path: coverImagePath,
+          auto_generate_cover: autoGenerateCover,  // ✅ 根据用户选择决定是否生成
+          cover_style: publishForm.value.coverStyle,  // ✅ 使用用户选择的风格
           use_cdp: true,              // ✅ 使用CDP模式
           cdp_port: 9222,
           declarations: JSON.stringify(publishForm.value.declarations),  // ✅ 使用用户选择的声明（多选）
-          article_images: []  // ✅ 文章配图（暂时为空，后续可扩展）
+          article_images: uploadedImagePaths  // ✅ 传递配图路径列表
         }
       }
     )
-    
+      
     if (response.data.status === 'success') {
       publishResult.value = response.data
       ElMessage.success(`🎉 文章发布成功！\n标题：${response.data.article_title}`)
+        
+      // 清空表单
       publishForm.value.topic = ''
       coverFile.value = null
       coverPreview.value = ''
+      imageFiles.value = []
+      imagePreviews.value = []
     } else {
       publishResult.value = response.data
       ElMessage.error('❌ 发布失败：' + (response.data.error || response.data.message || '未知错误'))

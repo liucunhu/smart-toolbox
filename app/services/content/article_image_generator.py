@@ -1,54 +1,101 @@
 """
-文章配图生成器
-根据文章内容自动生成相关配图
+文章配图生成器（AI增强版）
+根据文章内容自动生成相关配图，支持硅基流动AI图像生成
 """
 import os
 import uuid
 from PIL import Image, ImageDraw, ImageFont
 from typing import List, Dict, Optional
 import random
+import asyncio
+from app.utils.logger import logger
 
 
 class ArticleImageGenerator:
-    """文章配图生成器"""
+    """文章配图生成器（AI增强版）"""
     
-    def __init__(self, output_dir: str = "uploads/article_images"):
+    def __init__(self, output_dir: str = "uploads/article_images", use_ai: bool = True):
         self.output_dir = output_dir
+        self.use_ai = use_ai  # 是否使用AI生成
         os.makedirs(output_dir, exist_ok=True)
         
-    def generate_images_for_article(
+        # AI图像生成器（懒加载）
+        self._ai_generator = None
+        
+    async def generate_images_for_article(
         self, 
         title: str, 
         content: str, 
         num_images: int = 2,
-        category: str = "科技"
+        category: str = "科技",
+        use_ai: bool = None,  # 允许覆盖实例设置
+        enable_ab_test: bool = True  # 是否启用A/B测试
     ) -> List[Dict]:
         """
-        为文章生成配图
+        为文章生成配图（AI增强版 + A/B测试）
         
         Args:
             title: 文章标题
             content: 文章内容
             num_images: 生成图片数量
             category: 文章分类
+            use_ai: 是否使用AI生成（None则使用实例设置）
+            enable_ab_test: 是否启用A/B测试（默认True）
             
         Returns:
             生成的图片信息列表
         """
-        images = []
+        # 确定是否使用AI
+        should_use_ai = use_ai if use_ai is not None else self.use_ai
         
-        # 根据文章主题生成不同风格的配图
-        themes = self._extract_themes(title, content, category)
+        if should_use_ai:
+            logger.info(f"🤖 使用AI生成文章配图: {num_images}张")
+            images = await self._generate_ai_images(title, content, num_images, category)
+        else:
+            logger.info(f"🎨 使用传统方式生成文章配图: {num_images}张")
+            images = self._generate_traditional_images(title, content, num_images, category)
         
-        for i in range(min(num_images, len(themes))):
-            theme = themes[i]
-            image_info = self._generate_single_image(
-                theme=theme,
-                index=i + 1,
-                total=num_images
-            )
-            if image_info:
-                images.append(image_info)
+        # ★★★ 集成A/B测试 ★★★
+        if enable_ab_test and len(images) >= 2:
+            try:
+                from app.services.content.cover_ab_test import get_ab_tester
+                
+                ab_tester = get_ab_tester()
+                test_id = f"article_img_{uuid.uuid4().hex[:8]}"
+                
+                # 创建变体列表
+                variants = []
+                for i, img in enumerate(images):
+                    variant_id = chr(65 + i)  # A, B, C, D...
+                    style_desc = "AI生成" if img.get("ai_generated") else "传统生成"
+                    variants.append({
+                        "variant_id": variant_id,
+                        "file_path": img["file_path"],
+                        "theme": img.get("theme", ""),
+                        "style": style_desc,
+                        "description": f"{img.get('theme', '')} - {style_desc}风格"
+                    })
+                
+                # 创建A/B测试
+                test_result = ab_tester.create_test(
+                    test_id=test_id,
+                    article_title=title,
+                    cover_variants=variants,
+                    description=f"文章配图测试: {title}"
+                )
+                
+                if test_result["status"] == "success":
+                    logger.info(f"✅ 已创建文章配图A/B测试: {test_id}")
+                    logger.info(f"   变体: {[v['variant_id'] for v in variants]}")
+                    
+                    # 将测试ID附加到图片信息中
+                    for img in images:
+                        img["ab_test_id"] = test_id
+                else:
+                    logger.warning(f"⚠️ A/B测试创建失败: {test_result.get('error')}")
+            
+            except Exception as e:
+                logger.error(f"❌ A/B测试集成失败: {e}")
         
         return images
     
@@ -81,13 +128,100 @@ class ArticleImageGenerator:
         
         return themes
     
+    async def _generate_ai_images(
+        self,
+        title: str,
+        content: str,
+        num_images: int,
+        category: str
+    ) -> List[Dict]:
+        """使用硅基流动AI生成文章配图"""
+        try:
+            from app.services.content.image_generator import ImageGenerator
+            
+            # 提取主题
+            themes = self._extract_themes(title, content, category)
+            
+            # 初始化AI生成器
+            if not self._ai_generator:
+                self._ai_generator = ImageGenerator()
+            
+            images = []
+            for i, theme in enumerate(themes[:num_images]):
+                try:
+                    logger.info(f"🎨 生成第{i+1}/{num_images}张AI配图: {theme}")
+                    
+                    # 构建prompt
+                    prompt = f"{theme}, {category}, professional illustration, high quality, detailed, clean composition"
+                    
+                    # 调用AI生成（使用16:9比例适合头条）
+                    # 使用阿里百炼（默认提供商已改为dashscope）
+                    result = await self._ai_generator.generate_image(
+                        prompt=prompt,
+                        aspect_ratio="16:9",
+                        provider="dashscope"  # ✅ 使用阿里百炼
+                    )
+                    
+                    if result.get("status") == "success":
+                        image_info = {
+                            "file_path": result["image_path"],
+                            "theme": theme,
+                            "index": i + 1,
+                            "size": (1024, 576),
+                            "ai_generated": True,
+                            "provider": "dashscope"  # 阿里百炼
+                        }
+                        images.append(image_info)
+                        logger.info(f"✅ AI配图生成成功: {result['image_path']}")
+                    else:
+                        logger.warning(f"⚠️ AI配图生成失败: {result.get('error')}")
+                        # 降级到传统方式
+                        fallback = self._generate_single_image(theme, i + 1, num_images)
+                        if fallback:
+                            fallback["ai_generated"] = False
+                            images.append(fallback)
+                
+                except Exception as e:
+                    logger.error(f"❌ AI配图生成异常: {e}")
+                    # 降级到传统方式
+                    fallback = self._generate_single_image(theme, i + 1, num_images)
+                    if fallback:
+                        fallback["ai_generated"] = False
+                        images.append(fallback)
+            
+            logger.info(f"✅ AI配图生成完成: {len(images)}/{num_images}张")
+            return images
+            
+        except Exception as e:
+            logger.error(f"❌ AI配图生成失败: {e}，降级到传统方式")
+            return self._generate_traditional_images(title, content, num_images, category)
+    
+    def _generate_traditional_images(
+        self,
+        title: str,
+        content: str,
+        num_images: int,
+        category: str
+    ) -> List[Dict]:
+        """使用传统PIL方式生成文章配图（降级方案）"""
+        themes = self._extract_themes(title, content, category)
+        
+        images = []
+        for i, theme in enumerate(themes[:num_images]):
+            img_info = self._generate_single_image(theme, i + 1, num_images)
+            if img_info:
+                img_info["ai_generated"] = False
+                images.append(img_info)
+        
+        return images
+    
     def _generate_single_image(
         self, 
         theme: str, 
         index: int, 
         total: int
     ) -> Optional[Dict]:
-        """生成单张配图"""
+        """生成单张配图（传统PIL方式）"""
         try:
             # 图片尺寸（头条推荐比例）
             width = 800
@@ -228,6 +362,10 @@ class ArticleImageGenerator:
         return '\n\n'.join(new_paragraphs)
 
 
-def get_article_image_generator() -> ArticleImageGenerator:
-    """获取文章配图生成器实例"""
-    return ArticleImageGenerator()
+def get_article_image_generator(use_ai: bool = True) -> ArticleImageGenerator:
+    """获取文章配图生成器实例
+    
+    Args:
+        use_ai: 是否使用AI生成（默认True强制使用AI）
+    """
+    return ArticleImageGenerator(use_ai=use_ai)

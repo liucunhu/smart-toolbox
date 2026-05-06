@@ -743,12 +743,13 @@ def auto_publish_toutiao(
             # ========== 步骤 2.6: 生成文章配图 ==========
             logger.info(f"🖼️  [步骤2.6/5] 开始生成文章配图...")
             from app.services.content.article_image_generator import ArticleImageGenerator
-            image_generator = ArticleImageGenerator()
-            article_images_info = image_generator.generate_images_for_article(
+            image_generator = ArticleImageGenerator(use_ai=True)  # 强制使用AI生成
+            article_images_info = await image_generator.generate_images_for_article(
                 title=article_title,
                 content=article_content,
                 num_images=2,
-                category=category
+                category=category,
+                enable_ab_test=True  # 启用A/B测试
             )
             article_images = [img["file_path"] for img in article_images_info]
             if article_images:
