@@ -1,5 +1,5 @@
-2026/05/05-08:39:28.358 a38c Reusing MANIFEST D:\code\smart-toolbox\edge_profile_toutiao\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/05-08:39:28.367 a38c Recovering log #42
-2026/05/05-08:39:28.367 a38c Level-0 table #44: started
-2026/05/05-08:39:28.446 a38c Level-0 table #44: 18698 bytes OK
-2026/05/05-08:39:28.759 a38c Delete type=0 #42
+2026/05/12-13:43:20.752 94d0 Reusing MANIFEST D:\code\smart-toolbox\edge_profile_toutiao\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/12-13:43:20.758 94d0 Recovering log #80
+2026/05/12-13:43:20.758 94d0 Level-0 table #83: started
+2026/05/12-13:43:20.782 94d0 Level-0 table #83: 14259 bytes OK
+2026/05/12-13:43:20.799 94d0 Delete type=0 #80

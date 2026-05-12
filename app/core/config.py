@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # 热点数据源
     HOT_TREND_API_URL: Optional[str] = None
     HOT_TREND_API_KEY: Optional[str] = None
+    
+    # 网络搜索配置（用于获取实时素材进行二次原创）
+    BING_SEARCH_API_KEY: Optional[str] = None  # Bing Search API Key
+    SERPAPI_API_KEY: Optional[str] = None  # SerpAPI Key
 
     class Config:
         env_file = ".env"

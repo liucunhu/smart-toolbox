@@ -9,14 +9,16 @@ from typing import List, Dict, Optional
 import random
 import asyncio
 from app.utils.logger import logger
+from sqlalchemy.orm import Session
 
 
 class ArticleImageGenerator:
     """文章配图生成器（AI增强版）"""
     
-    def __init__(self, output_dir: str = "uploads/article_images", use_ai: bool = True):
+    def __init__(self, output_dir: str = "uploads/article_images", use_ai: bool = True, db: Session = None):
         self.output_dir = output_dir
         self.use_ai = use_ai  # 是否使用AI生成
+        self.db = db  # 数据库会话
         os.makedirs(output_dir, exist_ok=True)
         
         # AI图像生成器（懒加载）
@@ -100,32 +102,51 @@ class ArticleImageGenerator:
         return images
     
     def _extract_themes(self, title: str, content: str, category: str) -> List[str]:
-        """从文章内容中提取主题"""
+        """从文章内容中提取主题（增强版：支持更多主题）"""
         themes = []
         
-        # 根据分类和标题生成主题
-        if "人工智能" in title or "AI" in title:
-            themes = [
-                "AI技术",
-                "机器学习",
-                "深度学习应用",
-                "未来科技"
+        # ★★★ 扩展主题库，确保能生成足够的配图 ★★★
+        theme_pool = {
+            "AI技术": [
+                "AI技术", "机器学习", "深度学习应用", "未来科技",
+                "神经网络", "自然语言处理", "计算机视觉", "智能算法",
+                "数据科学", "人工智能伦理", "机器人技术", "自动化系统"
+            ],
+            "科技": [
+                "科技创新", "数字化时代", "智能未来", "技术趋势",
+                "互联网+", "云计算", "大数据", "物联网",
+                "区块链", "5G技术", "虚拟现实", "增强现实"
+            ],
+            "默认": [
+                "热门话题", "深度分析", "行业洞察", "趋势展望",
+                "专业解读", "实战案例", "经验分享", "技巧指南",
+                "前沿探索", "创新思维", "战略规划", "未来发展"
             ]
-        elif "科技" in category:
-            themes = [
-                "科技创新",
-                "数字化时代",
-                "智能未来",
-                "技术趋势"
-            ]
-        else:
-            themes = [
-                "热门话题",
-                "深度分析",
-                "行业洞察",
-                "趋势展望"
-            ]
+        }
         
+        # 根据标题和分类选择主题池
+        if "人工智能" in title or "AI" in title or "智能" in title:
+            themes = theme_pool["AI技术"]
+        elif "科技" in category or "技术" in category:
+            themes = theme_pool["科技"]
+        else:
+            themes = theme_pool["默认"]
+        
+        # ★★★ 根据内容关键词进一步优化主题 ★★★
+        content_keywords = {
+            "python": ["Python编程", "代码示例", "开发技巧"],
+            "数据": ["数据分析", "可视化", "数据挖掘"],
+            "网络": ["网络安全", "网络架构", "互联网应用"],
+            "移动": ["移动应用", "APP开发", "移动端优化"],
+            "云": ["云服务", "云平台", "云原生"],
+        }
+        
+        for keyword, extra_themes in content_keywords.items():
+            if keyword in content.lower() or keyword in title.lower():
+                themes = extra_themes + themes  # 将相关主题放在前面
+                break
+        
+        logger.info(f"📊 提取主题完成: 共{len(themes)}个主题，前5个: {themes[:5]}")
         return themes
     
     async def _generate_ai_images(
@@ -141,25 +162,37 @@ class ArticleImageGenerator:
             
             # 提取主题
             themes = self._extract_themes(title, content, category)
+            logger.info(f"🎨 准备生成 {num_images} 张配图，可用主题数: {len(themes)}")
             
             # 初始化AI生成器
             if not self._ai_generator:
-                self._ai_generator = ImageGenerator()
+                self._ai_generator = ImageGenerator(db=self.db)
             
             images = []
-            for i, theme in enumerate(themes[:num_images]):
+            selected_themes = themes[:num_images]
+            logger.info(f"📝 选中的主题: {selected_themes}")
+            
+            for i, theme in enumerate(selected_themes):
                 try:
                     logger.info(f"🎨 生成第{i+1}/{num_images}张AI配图: {theme}")
                     
-                    # 构建prompt
-                    prompt = f"{theme}, {category}, professional illustration, high quality, detailed, clean composition"
+                    # ★★★ 优化prompt：生成更有吸引力的配图 ★★★
+                    prompt = f"""{theme}, {category}
+
+专业级文章配图，高质量商业摄影风格：
+- 构图：层次分明，主体突出，视觉引导清晰
+- 色彩：鲜艳饱和，对比适度，符合主题氛围
+- 风格：现代简约，专业质感，细节丰富
+- 质量：8K超高清，锐利清晰，光影自然
+
+适合今日头条文章，增强阅读体验，提升吸引力"""
                     
-                    # 调用AI生成（使用16:9比例适合头条）
-                    # 使用阿里百炼（默认提供商已改为dashscope）
+                    # 调用AI生成（使用魔搭社区，已强制使用）
+                    # ✅ 使用魔搭社区（已强制使用，不做降级）
                     result = await self._ai_generator.generate_image(
                         prompt=prompt,
-                        aspect_ratio="16:9",
-                        provider="dashscope"  # ✅ 使用阿里百炼
+                        aspect_ratio="16:9"
+                        # ✅ 不指定provider，使用魔搭社区（默认提供商）
                     )
                     
                     if result.get("status") == "success":
@@ -169,7 +202,7 @@ class ArticleImageGenerator:
                             "index": i + 1,
                             "size": (1024, 576),
                             "ai_generated": True,
-                            "provider": "dashscope"  # 阿里百炼
+                            "provider": "modelscope"  # 魔搭社区
                         }
                         images.append(image_info)
                         logger.info(f"✅ AI配图生成成功: {result['image_path']}")
@@ -190,6 +223,9 @@ class ArticleImageGenerator:
                         images.append(fallback)
             
             logger.info(f"✅ AI配图生成完成: {len(images)}/{num_images}张")
+            if len(images) < num_images:
+                logger.warning(f"⚠️  配图数量不足: 期望{num_images}张，实际{len(images)}张")
+                logger.warning(f"   可能原因: AI生成失败或主题数量不足")
             return images
             
         except Exception as e:

@@ -27,6 +27,22 @@ import ImageGeneration from '../views/ImageGeneration.vue'
 import ABTestManagement from '../views/ABTestManagement.vue'
 // 养号中心
 import AccountNurturing from '../views/AccountNurturing.vue'
+// LLM配置管理
+import LLMConfig from '../views/LLMConfig.vue'
+// 内容任务管理
+import ContentTasks from '../views/ContentTasks.vue'
+// 代理管理
+import ProxyManagement from '../views/ProxyManagement.vue'
+// 合规检查
+import ComplianceCheck from '../views/ComplianceCheck.vue'
+// 字幕编辑
+import SubtitleEditor from '../views/SubtitleEditor.vue'
+// 视频处理
+import VideoProcessor from '../views/VideoProcessor.vue'
+// API用量监控
+import APIUsage from '../views/APIUsage.vue'
+// 文章数据分析
+import ArticleAnalytics from '../views/ArticleAnalytics.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -63,6 +79,14 @@ const routes = [
       { path: 'video-restructure', component: VideoRestructure, meta: { title: '视频重组' } },
       { path: 'sms-config', component: SmsConfig, meta: { title: 'SMS配置' } },
       { path: 'account-nurturing', component: AccountNurturing, meta: { title: '养号中心' } },
+      { path: 'llm-config', component: LLMConfig, meta: { title: '大模型配置' } },
+      { path: 'content-tasks', component: ContentTasks, meta: { title: '内容任务管理' } },
+      { path: 'proxy-management', component: ProxyManagement, meta: { title: '代理管理' } },
+      { path: 'compliance-check', component: ComplianceCheck, meta: { title: '合规检查' } },
+      { path: 'subtitle-editor', component: SubtitleEditor, meta: { title: '字幕编辑' } },
+      { path: 'video-processor', component: VideoProcessor, meta: { title: '视频处理' } },
+      { path: 'api-usage', component: APIUsage, meta: { title: 'API用量监控' } },
+      { path: 'article-analytics', component: ArticleAnalytics, meta: { title: '文章数据分析' } },
     ]
   }
 ]

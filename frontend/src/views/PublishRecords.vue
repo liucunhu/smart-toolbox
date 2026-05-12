@@ -75,10 +75,21 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="viewDetail(row)">
               详情
+            </el-button>
+            <!-- ✅ 失败的任务显示重新发布按钮 -->
+            <el-button 
+              v-if="row.status === 'failed'" 
+              size="small" 
+              type="danger" 
+              link 
+              @click="republish(row)"
+              :loading="republishingId === row.id"
+            >
+              🔄 重新发布
             </el-button>
           </template>
         </el-table-column>
@@ -147,6 +158,7 @@ const records = ref<any[]>([])
 const detailVisible = ref(false)
 const currentTask = ref<any>(null)
 const currentArticleContent = ref('')
+const republishingId = ref<number | null>(null)  // ✅ 重新发布中的任务ID
 
 const filters = ref({
   platform: '',
@@ -205,6 +217,53 @@ const viewDetail = async (task: any) => {
   }
   
   detailVisible.value = true
+}
+
+/**
+ * ✅ 重新发布失败的任务
+ */
+const republish = async (task: any) => {
+  if (!confirm(`确认要重新发布任务 "${task.article_title || task.original_topic}" 吗？`)) {
+    return
+  }
+  
+  republishingId.value = task.id
+  
+  try {
+    // 获取任务详情
+    const detailResponse = await apiClient.get(`/content/tasks/${task.id}`)
+    const taskDetail = detailResponse.data
+    
+    // 调用头条自动发布接口
+    const publishResponse = await apiClient.post(
+      '/content/toutiao/auto_publish',
+      null,
+      {
+        params: {
+          account_id: taskDetail.account_id || 1,  // 使用默认账号或从任务中获取
+          topic: taskDetail.original_topic,
+          category: taskDetail.article_category || '科技',
+          auto_generate_cover: true,  // 自动生成封面
+          auto_generate_images: true,  // 自动生成配图
+          num_images: 3,  // 生成3张配图
+          use_template: false
+        }
+      }
+    )
+    
+    if (publishResponse.data.status === 'success') {
+      ElMessage.success('✅ 重新发布成功！')
+      // 刷新列表
+      fetchRecords()
+    } else {
+      ElMessage.error('❌ 重新发布失败：' + (publishResponse.data.error || '未知错误'))
+    }
+  } catch (error: any) {
+    console.error('重新发布失败:', error)
+    ElMessage.error('❌ 重新发布失败：' + (error.response?.data?.detail || '请检查后端服务'))
+  } finally {
+    republishingId.value = null
+  }
 }
 
 const getPlatformType = (platform: string) => {

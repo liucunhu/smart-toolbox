@@ -20,6 +20,8 @@ class ToutiaoPublisher:
         self.browser = None     # 保存 browser 实例引用
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        self._is_cdp_mode = False  # 标记是否为CDP模式
+        self._cdp_user_data_dir = None  # CDP模式的用户数据目录
 
     async def initialize_browser(self, use_cdp: bool = False, cdp_port: int = 9222):
         """
@@ -75,19 +77,89 @@ class ToutiaoPublisher:
             # 只有当CDP端口未被占用时，才启动新浏览器
             logger.info(f"   启动新的Edge浏览器实例...")
             
+            # ★★★ 关键修复：使用独立的临时用户数据目录，不影响正常Edge使用 ★★★
+            import tempfile
+            import time
+            # 使用时间戳创建唯一的临时目录，确保与日常使用的Edge完全隔离
+            temp_dir = tempfile.gettempdir()
+            user_data_dir = os.path.join(temp_dir, f"smart-toolbox-cdp-{int(time.time())}")
+            
+            # 保存路径以便后续清理
+            self._cdp_user_data_dir = user_data_dir
+            
+            logger.info(f"   使用独立用户数据目录: {user_data_dir}")
+            logger.info(f"   （此目录与您的日常Edge配置完全隔离，互不影响）")
+            
             # 启动带远程调试的Edge
-            user_data_dir = "./edge_profile_toutiao_cdp"
+            abs_user_data_dir = os.path.abspath(user_data_dir)
+            
+            # ★★★ 尝试不同的启动参数组合 ★★★
             cmd = [
                 edge_path,
                 f'--remote-debugging-port={cdp_port}',
-                f'--user-data-dir={user_data_dir}',
-                'https://mp.toutiao.com/'
+                f'--user-data-dir="{abs_user_data_dir}"',  # 使用引号包裹路径
+                '--no-first-run',
+                '--no-default-browser-check',
+                'about:blank',
             ]
             
-            process = subprocess.Popen(cmd)
-            logger.info("✅ Edge浏览器已启动")
-            logger.info("   等待浏览器完全启动...")
-            await asyncio.sleep(5)
+            logger.info(f"   执行命令: {' '.join(cmd)}")
+            
+            # ★★★ 关键修复：使用 CREATE_NEW_CONSOLE 标志，确保浏览器独立运行 ★★★
+            creation_flags = 0
+            if os.name == 'nt':  # Windows
+                import subprocess as sp
+                creation_flags = sp.CREATE_NEW_CONSOLE
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creation_flags
+            )
+            logger.info(f"✅ Edge浏览器进程已启动 (PID: {process.pid})")
+            
+            # ★★★ 关键修复：等待 CDP 端口真正可用 ★★★
+            logger.info(f"   等待 CDP 端口 {cdp_port} 就绪...")
+            max_retries = 40  # 增加到40秒
+            retry_count = 0
+            cdp_ready = False
+            
+            while retry_count < max_retries:
+                await asyncio.sleep(1)  # 每秒检查一次
+                retry_count += 1
+                
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex(('127.0.0.1', cdp_port))
+                    if result == 0:
+                        cdp_ready = True
+                        sock.close()
+                        logger.info(f"   ✅ CDP 端口 {cdp_port} 已就绪（耗时 {retry_count} 秒）")
+                        break
+                    sock.close()
+                except:
+                    pass
+                
+                if retry_count % 5 == 0:
+                    logger.info(f"   ⏳ 等待中... ({retry_count}/{max_retries} 秒)")
+            
+            if not cdp_ready:
+                logger.error(f"   ❌ CDP 端口 {cdp_port} 在 {max_retries} 秒后仍未就绪")
+                logger.error(f"   请检查 Edge 浏览器是否正常启动")
+                # 尝试读取进程输出，查看是否有错误信息
+                try:
+                    stdout, stderr = process.communicate(timeout=2)
+                    if stdout:
+                        logger.error(f"   标准输出: {stdout.decode('utf-8', errors='ignore')[:500]}")
+                    if stderr:
+                        logger.error(f"   错误输出: {stderr.decode('utf-8', errors='ignore')[:500]}")
+                except:
+                    pass
+                logger.error(f"   💡 建议：关闭所有 Edge 浏览器窗口后重试")
+                logger.error(f"   💡 或者使用标准模式（use_cdp=False）")
+                raise TimeoutError(f"Edge 浏览器启动超时，CDP 端口 {cdp_port} 无法连接")
         else:
             logger.info("   ✅ 使用现有的Edge浏览器实例")
         
@@ -663,16 +735,32 @@ class ToutiaoPublisher:
                 if auto_generate_cover and not cover_image_path:
                     logger.info("🤖 开始AI生成封面图...")
                     
-                    # ✅ 强制使用魔搭社区生成真实AI图像（不做降级）
+                    # ✅ 使用数据库配置的默认提供商生成真实AI图像
+                    db = None
                     try:
                         from app.services.content.image_generator import ImageGenerator
-                        image_gen = ImageGenerator()
+                        from app.db.session import SessionLocal
                         
-                        prompt = f"{title}, {category}, 高质量专业摄影, 视觉冲击力强, 色彩鲜明, 构图精美, 4K超高清, 引人注目"
-                        logger.info(f"   使用魔搭社区生成封面图...")
-                        logger.info(f"   提示词: {prompt}")
+                        # ★★★ 关键修复：传入数据库会话，让ImageGenerator能读取配置 ★★★
+                        db = SessionLocal()
+                        image_gen = ImageGenerator(db=db)
                         
-                        # ✅ 强制使用魔搭社区
+                        # ★★★ 优化提示词：生成更有吸引力的封面图 ★★★
+                        prompt = f"""{title}, {category}
+
+专业级头条封面图设计，视觉冲击力强，引人注目：
+- 构图：黄金分割构图，主体突出，层次分明
+- 色彩：鲜艳饱和，对比强烈，暖色调为主
+- 风格：现代简约，商业摄影质感，高清细节
+- 元素：关键主题元素居中，留白适当，文字友好
+- 质量：8K超高清，专业灯光，锐利清晰
+
+适合今日头条平台，吸引点击，高转化率"""
+                        
+                        logger.info(f"   开始AI生成封面图...")
+                        logger.info(f"   提示词: {prompt[:100]}...")
+                        logger.info(f"   默认提供商: {image_gen.default_provider}")
+                        
                         result = await image_gen.generate_image(
                             prompt=prompt,
                             aspect_ratio="16:9"
@@ -680,30 +768,45 @@ class ToutiaoPublisher:
                         
                         if result.get("status") == "success":
                             cover_image_path = result.get("image_path")
-                            logger.info(f"✅ 魔搭社区封面图生成成功!")
+                            logger.info(f"✅ 封面图生成成功!")
                             logger.info(f"   图片路径: {cover_image_path}")
-                            logger.info(f"   提供商: {result.get('provider', 'modelscope')}")
+                            logger.info(f"   提供商: {result.get('provider', 'unknown')}")
                             logger.info(f"   模型: {result.get('model', 'unknown')}")
                         else:
                             # ✅ 不做降级，直接抛出异常
                             error_msg = result.get('error', '未知错误')
-                            logger.error(f"❌ 魔搭社区图像生成失败: {error_msg}")
-                            raise Exception(f"魔搭社区图像生成失败: {error_msg}")
+                            logger.error(f"❌ 封面图生成失败: {error_msg}")
+                            raise Exception(f"封面图生成失败: {error_msg}")
                     except Exception as e:
                         # ✅ 不做降级，直接抛出异常
                         logger.error(f"❌ 封面图生成失败: {e}")
                         raise
+                    finally:
+                        # 关闭数据库会话
+                        if db:
+                            db.close()
                 
                 # 如果有封面图，现在上传
                 if cover_image_path:
                     logger.info(f"📸 开始上传封面图: {cover_image_path}")
                     
-                    # 压缩封面图
-                    from app.utils.image_processor import compress_image
-                    compressed_path = compress_image(cover_image_path, max_size_kb=500)
-                    if compressed_path:
-                        cover_image_path = compressed_path
-                        logger.info(f"✅ 封面图压缩完成")
+                    try:
+                        # 压缩封面图
+                        from app.utils.image_processor import ImageProcessor
+                        processor = ImageProcessor()
+                        compress_result = processor.compress_image(
+                            cover_image_path,
+                            quality=85,
+                            max_width=1280,
+                            max_height=720
+                        )
+                        if compress_result.get("status") == "success":
+                            cover_image_path = compress_result["output_path"]
+                            logger.info(f"✅ 封面图压缩完成: {compress_result['compression_ratio_percent']}% 压缩率")
+                        else:
+                            logger.warning(f"⚠️  封面图压缩失败: {compress_result.get('error')}")
+                    except Exception as e:
+                        logger.warning(f"⚠️  封面图压缩异常: {e}，使用原图")
                     
                     # 选择单图模式
                     await self._select_single_image_mode()
@@ -979,8 +1082,9 @@ class ToutiaoPublisher:
             except Exception as e:
                 logger.warning(f"   ⚠️  隐藏 AI 助手失败: {e}")
             
-            # 点击发布按钮
-            await publish_button.click()
+            # ★★★ 关键修复：使用 force=True 强制点击，避免被AI助手抽屉遮挡 ★★★
+            logger.info("   🖱️  使用 force=True 强制点击发布按钮...")
+            await publish_button.click(force=True)
             logger.info("✅ 已点击发布按钮，等待响应...")
             
             # ★★★ 关键修复：增加等待时间，头条发布需要较长时间 ★★★
@@ -1009,19 +1113,20 @@ class ToutiaoPublisher:
             else:
                 logger.warning("⚠️  URL未变化，可能发布失败")
 
-            # ★★★ 检查是否有确认弹窗（从页面底部查找）★★★
+            # ★★★ 检查是否有确认弹窗（自动点击）★★★
             try:
                 logger.info("   查找'确认发布'按钮...")
+                # ★★★ 关键修复：等待确认对话框出现（与测试脚本一致）★★★
+                await asyncio.sleep(3)
+                
+                # ★★★ 自动点击确认发布按钮 ★★★
                 confirm_clicked = await self.page.evaluate("""
                     () => {
-                        // 从截图看，确认发布按钮在页面底部，不在模态框中
-                        // 直接查找所有包含"确认发布"文本的按钮
+                        // 查找所有包含"确认发布"文本的按钮
                         const allButtons = document.querySelectorAll('button, [role="button"], .byte-btn');
                         
                         for (const btn of allButtons) {
                             const text = btn.textContent?.trim();
-                            console.log('检查按钮:', text);
-                            
                             if (text === '确认发布') {
                                 btn.click();
                                 console.log('已点击确认发布按钮');
@@ -1062,11 +1167,79 @@ class ToutiaoPublisher:
                 
                 if confirm_clicked:
                     logger.info("✅ 已点击'确认发布'按钮")
-                    await asyncio.sleep(2)
+                    # ★★★ 关键修复：等待发布处理完成（与测试脚本一致）★★★
+                    logger.info("   ⏳ 等待发布处理完成（15秒）...")
+                    await asyncio.sleep(15)
                 else:
                     logger.info("⚠️  未找到确认按钮，可能不需要二次确认")
+                    # 即使没有二次确认，也等待一段时间让发布处理完成
+                    logger.info("   ⏳ 等待发布处理完成（15秒）...")
+                    await asyncio.sleep(15)
             except Exception as e:
                 logger.debug(f"未找到确认弹窗或已自动确认: {e}")
+                # 异常情况下也等待
+                logger.info("   ⏳ 等待发布处理完成（15秒）...")
+                await asyncio.sleep(15)
+            
+            # ★★★ 统一验证：跳转到“已发布作品”页面验证 ★★★
+            logger.info("   🔍 跳转到已发布作品页面进行验证...")
+            try:
+                articles_url = "https://mp.toutiao.com/profile_v4/graphic/articles"
+                await self.page.goto(articles_url, timeout=30000, wait_until='domcontentloaded')
+                await asyncio.sleep(5)  # 等待页面加载
+                
+                logger.info(f"   📄 当前URL: {self.page.url}")
+                
+                # 在已发布列表中查找刚发布的文章
+                article_found = await self.page.evaluate(f"""
+                    () => {{
+                        const bodyText = document.body.textContent || '';
+                        const title = `{title}`;
+                        
+                        // 检查页面是否包含文章标题
+                        return bodyText.includes(title);
+                    }}
+                """)
+                
+                if article_found:
+                    logger.info(f"✅ 在已发布作品中找到文章: {title}")
+                    logger.info("✅ 发布验证成功！")
+                    
+                    # 截图保存验证结果
+                    try:
+                        verify_screenshot = f"logs/toutiao_publish_verified_{int(asyncio.get_event_loop().time())}.png"
+                        await self.page.screenshot(path=verify_screenshot, full_page=True)
+                        logger.info(f"📸 验证截图: {verify_screenshot}")
+                    except:
+                        pass
+                    
+                    return {
+                        "status": "success",
+                        "title": title,
+                        "message": "文章发布成功，已在已发布作品中验证"
+                    }
+                else:
+                    logger.error(f"❌ 在已发布作品中未找到文章: {title}")
+                    logger.error("   发布失败！文章未在已发布列表中找到")
+                    
+                    # 截图保存
+                    try:
+                        verify_screenshot = f"logs/toutiao_publish_failed_{int(asyncio.get_event_loop().time())}.png"
+                        await self.page.screenshot(path=verify_screenshot, full_page=True)
+                        logger.info(f"📸 失败截图: {verify_screenshot}")
+                    except:
+                        pass
+                    
+                    # ✅ 直接返回失败，不再执行后续判断
+                    return {
+                        "status": "failed",
+                        "error": "发布失败：文章未在已发布作品列表中找到。可能原因：文章被保存为草稿、审核未通过或发布过程出错"
+                    }
+            except Exception as e:
+                logger.warning(f"⚠️  验证过程出错: {e}")
+                import traceback
+                traceback.print_exc()
+                # 继续执行后续的判断逻辑
             
             # ★★★ 发布后截图 ★★★
             try:
@@ -1168,18 +1341,24 @@ class ToutiaoPublisher:
                         "title": title,
                         "message": "文章已保存为草稿，请在头条后台手动发布"
                     }
+                elif publish_request_detected and response_status == 200:
+                    # ★★★ 关键修复：优先信任网络请求的成功响应 ★★★
+                    logger.info("✅ 检测到成功的发布网络请求（状态码200），即使URL未变化也视为发布成功")
+                    logger.info("   头条可能采用异步发布机制，URL不一定立即跳转")
+                    return {
+                        "status": "success",
+                        "title": title,
+                        "message": "发布请求已成功发送，文章正在处理中。请在头条后台确认发布状态"
+                    }
                 elif "publish" in current_url and not url_changed:
-                    logger.error("❌ 仍停留在发布页面且URL未变化，发布可能失败")
+                    # 只有在没有成功网络请求的情况下，才判定为失败
+                    logger.warning("⚠️  仍停留在发布页面且URL未变化，也未检测到成功的网络请求")
+                    logger.warning(f"   - 网络请求: {'有' if publish_request_detected else '无'}")
+                    logger.warning(f"   - 响应状态: {response_status}")
+                    logger.warning(f"   - URL变化: {'是' if url_changed else '否'}")
                     return {
                         "status": "failed",
-                        "error": "发布操作未完成，仍停留在发布页面。请检查表单是否填写完整"
-                    }
-                elif publish_request_detected and response_status == 200:
-                    logger.info("✅ 检测到成功的网络请求，但无明确提示，可能发布成功")
-                    return {
-                        "status": "pending",
-                        "title": title,
-                        "message": "发布请求已发送，请检查头条后台确认状态"
+                        "error": "发布操作未完成，仍停留在发布页面且未检测到成功的网络请求。请检查表单是否填写完整"
                     }
                 else:
                     logger.warning("⚠️  无法确定发布状态")
@@ -1187,8 +1366,9 @@ class ToutiaoPublisher:
                     logger.warning(f"   - URL变化: {'是' if url_changed else '否'}")
                     logger.warning(f"   - 响应状态: {response_status}")
                     return {
-                        "status": "failed",
-                        "error": "发布状态不明确，请查看日志和截图分析原因"
+                        "status": "pending",
+                        "title": title,
+                        "message": "发布状态不明确，请查看头条后台确认。建议检查日志和截图"
                     }
 
         except Exception as e:
@@ -1756,79 +1936,161 @@ class ToutiaoPublisher:
                     logger.info(f"       等待图片上传和处理(15秒)...")
                     await asyncio.sleep(15)  # 关键：必须是15秒
                     
-                    # 步骤5：点击确认按钮
-                    logger.info(f"      步骤 5：点击'确定'按钮...")
-                    confirm_clicked = await self.page.evaluate("""
+                    # ★★★ 关键修复：直接通过JS在目标段落后插入图片（绕过头条UI）★★★
+                    logger.info(f"      🔄 直接在目标段落后插入图片...")
+                    
+                    # 先获取已上传图片的URL（从对话框中）
+                    uploaded_img_url = await self.page.evaluate("""
                         () => {
-                            const allButtons = document.querySelectorAll('button, [role="button"]');
-                            for (const btn of allButtons) {
-                                const text = (btn.textContent || '').trim();
-                                const rect = btn.getBoundingClientRect();
-                                if ((text === '确定' || text === '确认' || text === '完成') && 
-                                    rect.width > 50 && rect.top > 0) {
-                                    btn.click();
-                                    return true;
+                            // 查找对话框中已上传的图片
+                            const dialogs = document.querySelectorAll('.upload-image-panel, .byte-modal, .byte-dialog, [role="dialog"]');
+                            for (const dialog of dialogs) {
+                                const imgs = dialog.querySelectorAll('img');
+                                if (imgs.length > 0) {
+                                    // 返回最后一张图片的URL（最新上传的）
+                                    return imgs[imgs.length - 1].src;
                                 }
                             }
-                            return false;
+                            return null;
                         }
                     """)
                     
-                    if confirm_clicked:
-                        logger.info(f"      ✅ 已点击确认按钮")
-                        await asyncio.sleep(3)
-                    else:
-                        logger.info(f"      ⚠️  未找到'确定'按钮")
+                    if uploaded_img_url:
+                        logger.info(f"      ✅ 获取到已上传图片URL")
                         
-                        # 策略2: 尝试滚动对话框后再查找
-                        logger.info(f"      🔄 尝试滚动对话框...")
-                        await self.page.evaluate("""
-                            () => {
-                                const dialogs = document.querySelectorAll('.byte-modal-content, .byte-dialog-body, .upload-image-panel, [role="dialog"]');
-                                dialogs.forEach(dialog => {
-                                    dialog.scrollTop = dialog.scrollHeight;
-                                });
-                            }
-                        """)
-                        await asyncio.sleep(2)
-                        
-                        # 再次尝试点击
-                        confirm_clicked = await self.page.evaluate("""
-                            () => {
-                                const allButtons = document.querySelectorAll('button, [role="button"], div[role="button"]');
-                                for (const btn of allButtons) {
-                                    const text = (btn.textContent || '').trim();
-                                    const rect = btn.getBoundingClientRect();
-                                    if ((text === '确定' || text === '确认' || text === '完成') && 
-                                        rect.width > 50 && rect.top > 0) {
-                                        btn.click();
-                                        return true;
-                                    }
+                        # 直接在目标段落后插入图片
+                        insert_result = await self.page.evaluate("""
+                            (params) => {
+                                const { targetIndex, imgUrl } = params;
+                                const editor = document.querySelector('div[contenteditable="true"]');
+                                if (!editor) return { success: false, reason: '未找到编辑器' };
+                                
+                                const paragraphs = editor.querySelectorAll('p, div');
+                                if (targetIndex >= paragraphs.length) {
+                                    return { success: false, reason: `目标索引${targetIndex}超出段落数${paragraphs.length}` };
                                 }
-                                return false;
+                                
+                                const targetParagraph = paragraphs[targetIndex];
+                                
+                                // 创建图片元素
+                                const img = document.createElement('img');
+                                img.src = imgUrl;
+                                img.style.maxWidth = '100%';
+                                img.style.height = 'auto';
+                                img.style.display = 'block';
+                                img.style.margin = '10px auto';
+                                
+                                // 在目标段落后插入图片
+                                if (targetParagraph.nextSibling) {
+                                    editor.insertBefore(img, targetParagraph.nextSibling);
+                                } else {
+                                    editor.appendChild(img);
+                                }
+                                
+                                // 在图片后添加一个空段落，方便后续插入
+                                const emptyPara = document.createElement('p');
+                                emptyPara.innerHTML = '<br>';
+                                if (img.nextSibling) {
+                                    editor.insertBefore(emptyPara, img.nextSibling);
+                                } else {
+                                    editor.appendChild(emptyPara);
+                                }
+                                
+                                return { success: true, message: '图片已插入' };
                             }
-                        """)
+                        """, {"targetIndex": target_position, "imgUrl": uploaded_img_url})
                         
-                        if confirm_clicked:
-                            logger.info(f"      ✅ 滚动后已点击'确定'按钮")
-                            await asyncio.sleep(3)
+                        if insert_result.get('success'):
+                            logger.info(f"      ✅ 图片已成功插入到第 {target_position + 1} 段落后")
                         else:
-                            logger.info(f"      ℹ️  未找到确认按钮（可能自动处理）")
+                            logger.warning(f"      ⚠️  JS插入失败: {insert_result.get('reason')}")
+                            # 降级方案：尝试点击确定按钮
+                            logger.info(f"      🔄 降级方案：尝试点击确定按钮...")
+                    else:
+                        logger.warning(f"      ⚠️  未获取到已上传图片URL，尝试点击确定按钮...")
+                    
+                    # 步骤5：关闭对话框（因为我们已经用JS直接插入图片了）
+                    logger.info(f"      步骤 5：关闭对话框...")
+                    
+                    # 策略1：尝试点击关闭按钮
+                    close_result = await self.page.evaluate("""
+                        () => {
+                            // 查找所有可能的关闭按钮
+                            const closeSelectors = [
+                                '.byte-modal-close',
+                                '.close-btn',
+                                '[aria-label="关闭"]',
+                                'button.close',
+                                '.icon-close'
+                            ];
+                            
+                            for (const selector of closeSelectors) {
+                                const btn = document.querySelector(selector);
+                                if (btn && typeof btn.click === 'function') {
+                                    btn.click();
+                                    return { method: 'button', selector: selector };
+                                }
+                            }
+                            
+                            return { method: 'none', reason: '未找到关闭按钮' };
+                        }
+                    """)
+                    
+                    if close_result.get('method') == 'button':
+                        logger.info(f"      ✅ 已点击关闭按钮 ({close_result.get('selector')})")
+                    else:
+                        logger.info(f"      ℹ️  未找到关闭按钮，尝试Escape键...")
+                    
+                    # 策略2：发送Escape键关闭对话框
+                    await self.page.keyboard.press('Escape')
+                    await asyncio.sleep(2)
+                    logger.info(f"      ✅ 对话框已关闭")
                     
                     # 步骤6：验证图片是否插入编辑器
                     logger.info(f"      步骤 6：验证图片...")
                     await asyncio.sleep(3)
                     
-                    img_count = await self.page.evaluate("""
+                    # ★★★ 详细验证：检查图片数量和位置 ★★★
+                    img_info = await self.page.evaluate("""
                         () => {
                             const editor = document.querySelector('div[contenteditable="true"]');
-                            if (!editor) return 0;
-                            return editor.querySelectorAll('img').length;
+                            if (!editor) return { count: 0, positions: [] };
+                            
+                            const imgs = editor.querySelectorAll('img');
+                            const positions = [];
+                            
+                            imgs.forEach((img, idx) => {
+                                // 找到图片所在的段落
+                                let parent = img.parentElement;
+                                let paraIndex = -1;
+                                
+                                while (parent && parent !== editor) {
+                                    const paragraphs = editor.querySelectorAll('p, div');
+                                    paraIndex = Array.from(paragraphs).indexOf(parent);
+                                    if (paraIndex !== -1) break;
+                                    parent = parent.parentElement;
+                                }
+                                
+                                positions.push({
+                                    index: idx,
+                                    paragraphIndex: paraIndex,
+                                    src: img.src.substring(0, 50) + '...'
+                                });
+                            });
+                            
+                            return {
+                                count: imgs.length,
+                                positions: positions
+                            };
                         }
                     """)
-                    logger.info(f"      📊 编辑器中图片数量: {img_count}")
                     
-                    if img_count > 0:
+                    logger.info(f"      📊 编辑器中图片数量: {img_info['count']}")
+                    if img_info['positions']:
+                        for pos in img_info['positions']:
+                            logger.info(f"         图片{pos['index'] + 1}: 位于第{pos['paragraphIndex'] + 1}段")
+                    
+                    if img_info['count'] > 0:
                         logger.info(f"      ✅ 图片已成功插入编辑器")
                     else:
                         logger.warning(f"      ⚠️  图片未插入")
@@ -1965,6 +2227,20 @@ class ToutiaoPublisher:
                 if self.playwright:
                     await self.playwright.stop()
                     self.playwright = None
+                
+                # ★★★ 新增：清理临时用户数据目录（如果存在）★★★
+                if hasattr(self, '_cdp_user_data_dir') and self._cdp_user_data_dir:
+                    import shutil
+                    import os as _os
+                    try:
+                        if _os.path.exists(self._cdp_user_data_dir):
+                            logger.info(f"   🗑️  清理临时用户数据目录: {self._cdp_user_data_dir}")
+                            shutil.rmtree(self._cdp_user_data_dir, ignore_errors=True)
+                            logger.info("   ✅ 临时目录已清理")
+                    except Exception as e:
+                        logger.warning(f"   ⚠️  清理临时目录失败: {e}")
+                    finally:
+                        self._cdp_user_data_dir = None
             else:
                 # 标准模式：关闭所有资源
                 if self.context:

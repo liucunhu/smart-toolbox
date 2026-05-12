@@ -9,22 +9,92 @@ from typing import Dict, List, Optional
 from pathlib import Path
 from app.utils.logger import logger
 from app.core.config import settings
+from sqlalchemy.orm import Session
 
 
 class ImageGenerator:
     """AI图像生成器"""
     
-    def __init__(self):
+    def __init__(self, db: Session = None):
+        """
+        初始化图像生成器
+        
+        Args:
+            db: 数据库会话（可选）。如果不提供，将尝试从数据库获取默认配置；
+                如果数据库配置不可用，则回退到配置文件。
+        """
+        self.db = db
         self.output_dir = "output/images"
         os.makedirs(self.output_dir, exist_ok=True)
         
         # 支持的图像生成提供商
         self.providers = {
-            "modelscope": self._generate_with_modelscope  # ✅ 仅使用魔搭社区
+            "modelscope": self._generate_with_modelscope,
+            "siliconflow": self._generate_with_siliconflow,
+            "dashscope": self._generate_with_dashscope
         }
         
-        # ✅ 强制使用魔搭社区，不做降级
-        self.default_provider = "modelscope"
+        # ✅ 优先使用数据库配置的提供商，如果没有则使用modelscope
+        self.default_provider = self._get_default_provider()
+    
+    def _get_default_provider(self) -> str:
+        """获取默认图像生成提供商"""
+        if not self.db:
+            return "modelscope"
+        
+        try:
+            from app.services.system.config_service import LLMConfigService
+            llm_service = LLMConfigService(self.db)
+            config = llm_service.get_default_llm_config("image_generation")
+            
+            if config:
+                logger.info(f"✅ 使用数据库配置的图像提供商: {config.provider.value}")
+                return config.provider.value
+        except Exception as e:
+            logger.warning(f"从数据库获取图像配置失败: {e}")
+        
+        return "modelscope"
+    
+    def _get_image_config(self, provider: str):
+        """
+        从数据库或配置文件获取图像生成配置
+        
+        Returns:
+            (api_key, base_url, image_model)
+        """
+        # 尝试从数据库获取
+        if self.db:
+            try:
+                from app.services.system.config_service import LLMConfigService
+                llm_service = LLMConfigService(self.db)
+                config = llm_service.get_llm_config(provider, "image_generation", is_default=True)
+                
+                if config:
+                    return config.api_key, config.base_url, config.image_model_name or config.model_name
+            except Exception as e:
+                logger.warning(f"从数据库获取{provider}配置失败: {e}")
+        
+        # 回退到配置文件
+        if provider == "siliconflow":
+            return (
+                getattr(settings, 'SILICONFLOW_API_KEY', ''),
+                settings.SILICONFLOW_BASE_URL,
+                'Tongyi-MAI/Z-Image-Turbo'
+            )
+        elif provider == "dashscope":
+            return (
+                getattr(settings, 'DASHSCOPE_API_KEY', ''),
+                settings.DASHSCOPE_BASE_URL,
+                'wanx2.1-t2i-turbo'
+            )
+        elif provider == "modelscope":
+            return (
+                getattr(settings, 'MODELSCOPE_API_KEY', ''),
+                settings.MODELSCOPE_BASE_URL,
+                'black-forest-labs/FLUX.1-schnell'
+            )
+        
+        return '', '', ''
     
     async def generate_image(
         self,
@@ -298,9 +368,8 @@ class ImageGenerator:
     async def _generate_with_siliconflow(self, prompt: str, aspect_ratio: str) -> Dict:
         """使用硅基流动生成图像（Tongyi-MAI/Z-Image-Turbo等模型）"""
         try:
-            api_key = getattr(settings, 'SILICONFLOW_API_KEY', '')
-            # ★★★ 使用Tongyi-MAI/Z-Image-Turbo模型（通义千问加速版，2026年5月实测可用）★★★
-            image_model = 'Tongyi-MAI/Z-Image-Turbo'
+            # 尝试从数据库获取配置
+            api_key, base_url, image_model = self._get_image_config("siliconflow")
             
             if not api_key:
                 return {
@@ -316,7 +385,7 @@ class ImageGenerator:
             
             async with httpx.AsyncClient(timeout=120.0) as client:  # 图像生成需要更长时间
                 response = await client.post(
-                    f"{settings.SILICONFLOW_BASE_URL}/images/generations",
+                    f"{base_url}/images/generations",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
@@ -371,10 +440,8 @@ class ImageGenerator:
     async def _generate_with_dashscope(self, prompt: str, aspect_ratio: str) -> Dict:
         """使用阿里百炼（DashScope）生成图像（通义万相）"""
         try:
-            api_key = getattr(settings, 'DASHSCOPE_API_KEY', '')
-            # 使用通义万相极速版（性价比高，0.14元/张）
-            # 必须是图像生成模型，不能使用LLM模型
-            image_model = 'wanx2.1-t2i-turbo'  # 固定使用通义万相极速版
+            # 尝试从数据库获取配置
+            api_key, base_url, image_model = self._get_image_config("dashscope")
             
             if not api_key:
                 return {
@@ -435,7 +502,7 @@ class ImageGenerator:
                         
                         # 查询任务状态
                         status_response = await client.get(
-                            f"{settings.DASHSCOPE_BASE_URL}/tasks/{task_id}",
+                            f"{base_url}/tasks/{task_id}",
                             headers={
                                 "Authorization": f"Bearer {api_key}"
                             }
@@ -518,9 +585,8 @@ class ImageGenerator:
     async def _generate_with_modelscope(self, prompt: str, aspect_ratio: str) -> Dict:
         """使用魔搭社区（ModelScope）生成图像（FLUX.1-schnell等模型）"""
         try:
-            api_key = getattr(settings, 'MODELSCOPE_API_KEY', '')
-            # ✅ 使用 FLUX.1-schnell 模型（魔搭社区可用，快速且质量高）
-            image_model = 'black-forest-labs/FLUX.1-schnell'
+            # 尝试从数据库获取配置
+            api_key, base_url, image_model = self._get_image_config("modelscope")
             
             if not api_key:
                 return {
@@ -538,7 +604,7 @@ class ImageGenerator:
             async with httpx.AsyncClient(timeout=180.0) as client:
                 # 步骤1: 创建异步任务
                 response = await client.post(
-                    f"{settings.MODELSCOPE_BASE_URL}/images/generations",
+                    f"{base_url}/images/generations",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
@@ -580,7 +646,7 @@ class ImageGenerator:
                     
                     # 查询任务状态
                     status_response = await client.get(
-                        f"{settings.MODELSCOPE_BASE_URL}/tasks/{task_id}",
+                        f"{base_url}/tasks/{task_id}",
                         headers={
                             "Authorization": f"Bearer {api_key}"
                         }

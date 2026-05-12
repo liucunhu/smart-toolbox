@@ -200,7 +200,7 @@ const handlePublishToutiao = async () => {
         content: result.value.article_content,
         category: result.value.article_category || '科技',
         tags: result.value.tags || [],
-        auto_generate_cover: true,  // ✅ 启用AI自动生成封面图
+        auto_generate_cover: true,  // ✅ 启用AI自动生成封面图（使用数据库配置的默认提供商）
         cover_style: 'modern',       // ✅ 现代科技风格
         use_cdp: true,               // ✅ 使用CDP模式（推荐）
         cdp_port: 9222
@@ -247,7 +247,7 @@ const handleAutoPublishToutiao = async () => {
         username: username,
         password: password,
         category: result.value.article_category || '科技',
-        auto_generate_cover: true,  // ✅ 启用AI自动生成封面图
+        auto_generate_cover: true,  // ✅ 启用AI自动生成封面图（使用数据库配置的默认提供商）
         cover_style: 'modern',       // ✅ 现代科技风格
         use_cdp: true,               // ✅ 使用CDP模式（推荐）
         cdp_port: 9222

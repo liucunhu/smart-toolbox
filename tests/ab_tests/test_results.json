@@ -470,5 +470,814 @@
         "engagement_score": 0.0
       }
     }
+  },
+  "article_img_71797e05": {
+    "test_id": "article_img_71797e05",
+    "article_title": "AI有哪些变现渠道",
+    "description": "文章配图测试: AI有哪些变现渠道",
+    "created_at": "2026-05-06T13:07:47.204340",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_754d2787.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_7c14a962.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_c72faaa3": {
+    "test_id": "article_img_c72faaa3",
+    "article_title": "AI有哪些变现渠道",
+    "description": "文章配图测试: AI有哪些变现渠道",
+    "created_at": "2026-05-06T13:08:16.224370",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_0c8b7523.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_6935f80c.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_24c9d286": {
+    "test_id": "article_img_24c9d286",
+    "article_title": "AI有哪些变现渠道",
+    "description": "文章配图测试: AI有哪些变现渠道",
+    "created_at": "2026-05-06T13:09:19.500405",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_c7816d6f.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_09b7419b.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_a38b58ec": {
+    "test_id": "article_img_a38b58ec",
+    "article_title": "90%的人不知道的3个办公自动化神技，效率翻倍不是梦",
+    "description": "文章配图测试: 90%的人不知道的3个办公自动化神技，效率翻倍不是梦",
+    "created_at": "2026-05-07T13:59:00.390417",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_998b9c28.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_4b09b2bc.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_4f0271b8": {
+    "test_id": "article_img_4f0271b8",
+    "article_title": "这3个技巧，让你办公效率翻倍，90%的人不知道",
+    "description": "文章配图测试: 这3个技巧，让你办公效率翻倍，90%的人不知道",
+    "created_at": "2026-05-07T14:29:10.911974",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_b069e3ad.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_d1099a6e.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_b34f49f9": {
+    "test_id": "article_img_b34f49f9",
+    "article_title": "这3个办公自动化技巧，让你准点下班不是梦",
+    "description": "文章配图测试: 这3个办公自动化技巧，让你准点下班不是梦",
+    "created_at": "2026-05-07T14:46:17.763092",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_70a965ab.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_bc727c2e.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_af8537e7": {
+    "test_id": "article_img_af8537e7",
+    "article_title": "3个AI办公技巧，让同事以为你偷偷加班了",
+    "description": "文章配图测试: 3个AI办公技巧，让同事以为你偷偷加班了",
+    "created_at": "2026-05-07T15:09:13.944010",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_1a92b36d.png",
+        "theme": "AI技术",
+        "style": "AI生成",
+        "description": "AI技术 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_986cd832.png",
+        "theme": "机器学习",
+        "style": "AI生成",
+        "description": "机器学习 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_309ee26b": {
+    "test_id": "article_img_309ee26b",
+    "article_title": "我用大模型5分钟搞定PPT，同事还以为我加班到深夜",
+    "description": "文章配图测试: 我用大模型5分钟搞定PPT，同事还以为我加班到深夜",
+    "created_at": "2026-05-08T08:34:02.889973",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_7d1a7aca.jpg",
+        "theme": "科技创新",
+        "style": "传统生成",
+        "description": "科技创新 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_766ded04.jpg",
+        "theme": "数字化时代",
+        "style": "传统生成",
+        "description": "数字化时代 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_4bc7cfd6.jpg",
+        "theme": "智能未来",
+        "style": "传统生成",
+        "description": "智能未来 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_3adff4bf": {
+    "test_id": "article_img_3adff4bf",
+    "article_title": "90%的人都选错了！主流大模型真实体验对比，差距大到离谱",
+    "description": "文章配图测试: 90%的人都选错了！主流大模型真实体验对比，差距大到离谱",
+    "created_at": "2026-05-08T08:51:10.783140",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_9d4d8475.jpg",
+        "theme": "科技创新",
+        "style": "传统生成",
+        "description": "科技创新 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_c8cff47f.jpg",
+        "theme": "数字化时代",
+        "style": "传统生成",
+        "description": "数字化时代 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_4e799fd3.jpg",
+        "theme": "智能未来",
+        "style": "传统生成",
+        "description": "智能未来 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_f369e8e0": {
+    "test_id": "article_img_f369e8e0",
+    "article_title": "搞懂这4个AI概念，你的效率直接翻3倍",
+    "description": "文章配图测试: 搞懂这4个AI概念，你的效率直接翻3倍",
+    "created_at": "2026-05-08T09:06:01.728555",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_49a94f13.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_a81064cb.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_8c5dec8a.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_dc2d6160": {
+    "test_id": "article_img_dc2d6160",
+    "article_title": "AI圈3个概念90%人分不清！Skills/MCP/A...",
+    "description": "文章配图测试: AI圈3个概念90%人分不清！Skills/MCP/A...",
+    "created_at": "2026-05-08T09:11:25.316703",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_b9ecb488.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_4ddc7270.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_5d75559e.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_96a122c3": {
+    "test_id": "article_img_96a122c3",
+    "article_title": "AI圈暗藏玄机！skills、MCP、Agent和工作...",
+    "description": "文章配图测试: AI圈暗藏玄机！skills、MCP、Agent和工作...",
+    "created_at": "2026-05-08T09:16:38.980859",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "uploads/article_images\\article_img_86cac4fb.jpg",
+        "theme": "AI技术",
+        "style": "传统生成",
+        "description": "AI技术 - 传统生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "uploads/article_images\\article_img_3c371163.jpg",
+        "theme": "机器学习",
+        "style": "传统生成",
+        "description": "机器学习 - 传统生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "uploads/article_images\\article_img_b61ce639.jpg",
+        "theme": "深度学习应用",
+        "style": "传统生成",
+        "description": "深度学习应用 - 传统生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_6b91ff73": {
+    "test_id": "article_img_6b91ff73",
+    "article_title": "免费大模型Token白嫖指南！这5家供应商别错过",
+    "description": "文章配图测试: 免费大模型Token白嫖指南！这5家供应商别错过",
+    "created_at": "2026-05-08T10:14:26.447521",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_8b18137d.png",
+        "theme": "数据分析",
+        "style": "AI生成",
+        "description": "数据分析 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_f858323c.png",
+        "theme": "可视化",
+        "style": "AI生成",
+        "description": "可视化 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_798b4f34.png",
+        "theme": "数据挖掘",
+        "style": "AI生成",
+        "description": "数据挖掘 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_c743e620": {
+    "test_id": "article_img_c743e620",
+    "article_title": "我用AI月入3万，这4个野路子90%的人还不知道",
+    "description": "文章配图测试: 我用AI月入3万，这4个野路子90%的人还不知道",
+    "created_at": "2026-05-08T11:54:57.162929",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_649dd6a4.png",
+        "theme": "AI技术",
+        "style": "AI生成",
+        "description": "AI技术 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_2d51ce59.png",
+        "theme": "机器学习",
+        "style": "AI生成",
+        "description": "机器学习 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_a266e891.png",
+        "theme": "深度学习应用",
+        "style": "AI生成",
+        "description": "深度学习应用 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_94659104": {
+    "test_id": "article_img_94659104",
+    "article_title": "没显卡也能玩转大模型？这3招绝了",
+    "description": "文章配图测试: 没显卡也能玩转大模型？这3招绝了",
+    "created_at": "2026-05-08T15:07:17.556930",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_e8e93172.png",
+        "theme": "Python编程",
+        "style": "AI生成",
+        "description": "Python编程 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_dc53ea3a.png",
+        "theme": "代码示例",
+        "style": "AI生成",
+        "description": "代码示例 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_2017106d.png",
+        "theme": "开发技巧",
+        "style": "AI生成",
+        "description": "开发技巧 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_de662491": {
+    "test_id": "article_img_de662491",
+    "article_title": "没独显的笔记本跑大模型？这3个野路子真香",
+    "description": "文章配图测试: 没独显的笔记本跑大模型？这3个野路子真香",
+    "created_at": "2026-05-08T15:34:46.469825",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_76f08bd6.png",
+        "theme": "云服务",
+        "style": "AI生成",
+        "description": "云服务 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_557f0ed3.png",
+        "theme": "云平台",
+        "style": "AI生成",
+        "description": "云平台 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_8dab6a28.png",
+        "theme": "云原生",
+        "style": "AI生成",
+        "description": "云原生 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_fb3d7506": {
+    "test_id": "article_img_fb3d7506",
+    "article_title": "扔掉旧笔记本？教你用这3招，让没显卡的电脑也能跑AI大模型",
+    "description": "文章配图测试: 扔掉旧笔记本？教你用这3招，让没显卡的电脑也能跑AI大模型",
+    "created_at": "2026-05-08T16:02:51.885292",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_3d0dab33.png",
+        "theme": "Python编程",
+        "style": "AI生成",
+        "description": "Python编程 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_bcd08ab3.png",
+        "theme": "代码示例",
+        "style": "AI生成",
+        "description": "代码示例 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_5810b4ab.png",
+        "theme": "开发技巧",
+        "style": "AI生成",
+        "description": "开发技巧 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_74c0e62d": {
+    "test_id": "article_img_74c0e62d",
+    "article_title": "Deepseek这个国产AI，让90%的人白学了",
+    "description": "文章配图测试: Deepseek这个国产AI，让90%的人白学了",
+    "created_at": "2026-05-09T11:25:33.123860",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_2e96a015.png",
+        "theme": "数据分析",
+        "style": "AI生成",
+        "description": "数据分析 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_770786bb.png",
+        "theme": "可视化",
+        "style": "AI生成",
+        "description": "可视化 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_ceb61213.png",
+        "theme": "数据挖掘",
+        "style": "AI生成",
+        "description": "数据挖掘 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
   }
 }

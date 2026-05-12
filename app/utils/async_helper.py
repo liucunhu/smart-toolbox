@@ -2,6 +2,7 @@
 异步工具函数
 提供通用的异步任务执行辅助方法
 """
+import sys
 import asyncio
 from typing import Callable, Any
 
@@ -27,8 +28,13 @@ def run_async_task(coro):
         # 没有运行中的事件循环，创建新的
         pass
     
-    # 创建新的事件循环
-    loop = asyncio.new_event_loop()
+    # Windows 必须使用 ProactorEventLoop 支持子进程（Playwright 需要）
+    # SelectorEventLoop 在 Windows 上不支持 subprocess，会抛出 NotImplementedError
+    if sys.platform == 'win32':
+        loop = asyncio.ProactorEventLoop()
+    else:
+        loop = asyncio.new_event_loop()
+    
     asyncio.set_event_loop(loop)
     try:
         result = loop.run_until_complete(coro)

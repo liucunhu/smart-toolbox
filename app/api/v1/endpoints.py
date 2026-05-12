@@ -14,6 +14,7 @@ from app.utils.async_helper import run_async_task
 import uuid
 import json
 import os
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 router = APIRouter()
@@ -248,7 +249,7 @@ def create_account(
     }
 
 @router.post("/content/generate", summary="生成文案", description="使用AI生成爆款文案或文章")
-def generate_content(topic: str, platform: PlatformEnum):
+def generate_content(topic: str, platform: PlatformEnum, db: Session = Depends(get_db)):
     """
     生成爆款文案 (同步，直接返回结果)
     
@@ -260,7 +261,7 @@ def generate_content(topic: str, platform: PlatformEnum):
     """
     try:
         from app.services.content.copywriting_generation import CopywritingGenerator
-        generator = CopywritingGenerator()
+        generator = CopywritingGenerator(db=db)
         result = generator.generate_script(platform.value, topic)
         
         if result:
@@ -615,8 +616,8 @@ def publish_toutiao_article(
 def auto_publish_toutiao(
     account_id: int,
     topic: str,
-    username: str,
-    password: str,
+    username: str = None,  # ✅ 改为可选，优先使用数据库中的账号
+    password: str = None,  # ✅ 改为可选，优先使用数据库中的密码
     category: str = "科技",
     cover_image_path: str = None,
     auto_generate_cover: bool = True,
@@ -624,34 +625,39 @@ def auto_publish_toutiao(
     use_template: str = None,
     declaration_type: str = "ai",  # 新增参数：声明类型（已废弃，改用declarations）
     declarations: str = None,  # ✅ 新增参数：作品声明（JSON字符串数组）
-    article_images: list = None,  # 新增参数：文章配图路径列表
-    use_cdp: bool = True,  # CDP模式：使用真实Edge浏览器（推荐）
-    cdp_port: int = 9222,  # CDP调试端口
+    article_images: list = None,  # 用户自定义文章配图路径列表
+    auto_generate_images: bool = True,  # 是否自动生成文章配图
+    num_images: int = 2,  # 自动生成配图数量
+    use_cdp: bool = False,  # 使用标准模式（CDP模式在当前环境不可用）
+    cdp_port: int = 9222,  # CDP调试端口（保留参数以兼容旧代码）
     db: Session = Depends(get_db)
 ):
     """
-    一键发布头条文章（全自动流程，支持高级封面图功能）
+    一键发布头条文章（全自动流程，支持高级封面图功能和AI配图）
     
     流程：
-    1. 自动登录头条账号
+    1. 自动登录头条账号（优先使用Cookie，其次使用数据库中的账号密码）
     2. AI生成文章内容
     3. AI生成封面图（可选）
-    4. 自动发布文章（支持文章配图）
-    5. 保存发布记录
+    4. AI生成文章配图或用户上传配图
+    5. 自动发布文章
+    6. 保存发布记录
     
     - **account_id**: 账号 ID
     - **topic**: 文章主题
-    - **username**: 登录账号（手机号/邮箱）
-    - **password**: 登录密码
+    - **username**: 登录账号（可选，如果不提供则使用数据库中的账号）
+    - **password**: 登录密码（可选，如果不提供则使用数据库中的密码）
     - **category**: 文章分类（默认：科技）
     - **cover_image_path**: 封面图片路径（可选）
     - **auto_generate_cover**: 是否自动生成封面图（默认：True）
     - **cover_style**: AI生成风格 (modern/minimal/bold)
     - **use_template**: 使用的模板ID
     - **declaration_type**: 作品声明类型 ("ai"=引用AI, "personal_opinion"=仅个人观点)
-    - **article_images**: 文章配图路径列表（可选）
-    - **use_cdp**: 是否使用CDP模式（连接真实Edge浏览器，推荐=True）
-    - **cdp_port**: CDP调试端口（默认9222）
+    - **article_images**: 用户自定义文章配图路径列表（可选）
+    - **auto_generate_images**: 是否自动生成文章配图（默认：True，如果为False则使用article_images）
+    - **num_images**: 自动生成配图数量（默认：2）
+    - **use_cdp**: 是否使用CDP模式（当前环境不可用，请使用标准模式）
+    - **cdp_port**: CDP调试端口（保留参数，暂未使用）
     """
     from app.services.publish.toutiao_publisher import ToutiaoPublisher
     from app.services.content.copywriting_generation import CopywritingGenerator
@@ -687,10 +693,21 @@ def auto_publish_toutiao(
                     login_method = "cookie"
                     logger.info(f"✅ Cookie登录成功！")
             
-            # 如果Cookie失效，使用账号密码登录
+            # 如果Cookie失效，使用账号密码登录（优先使用传入的参数，其次使用数据库中的）
             if not login_success:
+                # ★★★ 从数据库或参数中获取账号密码 ★★★
+                login_username = username or account.username
+                login_password = password or account.password
+                
+                if not login_username or not login_password:
+                    return {
+                        "status": "failed",
+                        "step": "login",
+                        "error": "未找到账号密码，请在数据库中配置或传入username/password参数"
+                    }
+                
                 logger.info(f"Cookie失效或未找到，使用账号密码登录...")
-                login_result = await publisher.login_with_manual_input(username, password)
+                login_result = await publisher.login_with_manual_input(login_username, login_password)
                 if login_result["status"] == "success":
                     # 保存新的Cookie
                     account.cookies = login_result["cookies"]
@@ -710,9 +727,66 @@ def auto_publish_toutiao(
             logger.info(f"✅ [步骤1/4] 登录成功（方式: {login_method}）")
             
             # ========== 步骤 2: AI生成文章 ==========
+            
+            # === 步骤 2.0: 如果未提供主题，自动推荐热门主题 ===
+            if not topic or topic.strip() == "":
+                logger.info(f"🔥 未指定主题，开始智能推荐热门话题...")
+                try:
+                    from app.services.content.topic_recommender import get_topic_recommendation_service
+                    recommender = get_topic_recommendation_service(db)
+                    
+                    # 获取个性化推荐（基于账号历史数据）
+                    recommendations = recommender.get_personalized_recommendations(account_id, count=3)
+                    
+                    if recommendations:
+                        # 选择置信度最高的主题
+                        best_recommendation = recommendations[0]
+                        topic = best_recommendation.get("topic", "")
+                        reason = best_recommendation.get("reason", "")
+                        confidence = best_recommendation.get("confidence", 0)
+                        
+                        logger.info(f"✅ [步骤2.0] 自动推荐主题: {topic}")
+                        logger.info(f"   推荐理由: {reason}")
+                        logger.info(f"   置信度: {confidence:.0%}")
+                    else:
+                        # 如果没有推荐，使用默认主题
+                        topic = "AI技术在2026年的最新应用"
+                        logger.warning(f"⚠️  未能获取推荐主题，使用默认主题: {topic}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ 主题推荐失败: {e}，使用默认主题")
+                    topic = "AI技术在2026年的最新应用"
+            
             logger.info(f"[步骤2/4] 开始生成文章内容，主题: {topic}...")
-            generator = CopywritingGenerator()
-            article_result = generator.generate_script("toutiao", topic)
+            
+            # === 步骤 2.1: 获取智能分析结果（如果可用）===
+            optimized_prompt = ""
+            try:
+                from app.services.analytics.analytics_cache import get_analytics_cache_service
+                cache_service = get_analytics_cache_service(db)
+                
+                # 检查是否有可用的分析结果
+                if cache_service.is_analysis_available(account_id):
+                    optimized_prompt = cache_service.get_optimized_prompt(account_id)
+                    if optimized_prompt:
+                        logger.info(f"✅ [步骤2.1] 获取到账号 {account_id} 的智能分析优化提示词")
+                    else:
+                        logger.info(f"ℹ️  [步骤2.1] 未找到优化提示词，将使用默认提示词")
+                else:
+                    logger.info(f"ℹ️  [步骤2.1] 暂无分析结果，建议先进行数据分析")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️  获取智能分析结果失败: {e}，将使用默认提示词")
+            
+            generator = CopywritingGenerator(db=db)
+            
+            # === 步骤 2.2: 生成文章（启用网络搜索 + 智能分析优化）===
+            article_result = generator.generate_script(
+                platform="toutiao",
+                topic=topic,
+                enable_web_search=True,  # 启用网络搜索获取实时素材
+                optimized_prompt=optimized_prompt if optimized_prompt else None  # 应用优化提示词
+            )
             
             if not article_result:
                 return {
@@ -741,24 +815,33 @@ def auto_publish_toutiao(
             logger.info(f"✅ [步骤2.5/5] 合规审查通过")
             
             # ========== 步骤 2.6: 生成文章配图 ==========
-            logger.info(f"🖼️  [步骤2.6/5] 开始生成文章配图...")
-            from app.services.content.article_image_generator import ArticleImageGenerator
-            image_generator = ArticleImageGenerator(use_ai=True)  # 强制使用AI生成
-            article_images_info = await image_generator.generate_images_for_article(
-                title=article_title,
-                content=article_content,
-                num_images=2,
-                category=category,
-                enable_ab_test=True  # 启用A/B测试
-            )
-            article_images = [img["file_path"] for img in article_images_info]
-            if article_images:
-                logger.info(f"✅ [步骤2.6/5] 文章配图生成成功，共 {len(article_images)} 张")
-                for i, img_path in enumerate(article_images, 1):
-                    logger.info(f"   配图{i}: {img_path}")
+            final_article_images = []
+            
+            if auto_generate_images:
+                # AI自动生成配图
+                logger.info(f"🖼️  [步骤2.6/5] 开始AI生成文章配图...")
+                from app.services.content.article_image_generator import ArticleImageGenerator
+                image_generator = ArticleImageGenerator(use_ai=True, db=db)  # 强制使用AI生成，传递db
+                article_images_info = await image_generator.generate_images_for_article(
+                    title=article_title,
+                    content=article_content,
+                    num_images=num_images,
+                    category=category,
+                    enable_ab_test=True  # 启用A/B测试
+                )
+                final_article_images = [img["file_path"] for img in article_images_info]
+                if final_article_images:
+                    logger.info(f"✅ [步骤2.6/5] AI文章配图生成成功，共 {len(final_article_images)} 张")
+                    for i, img_path in enumerate(final_article_images, 1):
+                        logger.info(f"   配图{i}: {img_path}")
+                else:
+                    logger.warning(f"⚠️  AI文章配图生成失败")
+            elif article_images:
+                # 使用用户上传的配图
+                logger.info(f"📁 [步骤2.6/5] 使用用户上传的文章配图: {len(article_images)} 张")
+                final_article_images = article_images
             else:
-                logger.warning(f"⚠️  文章配图生成失败，将不上传配图")
-                article_images = []
+                logger.info(f"ℹ️  [步骤2.6/5] 未配置文章配图，将不上传配图")
             
             # ========== 步骤 2.7: 解析作品声明 ==========
             import json
@@ -785,7 +868,7 @@ def auto_publish_toutiao(
                 use_template=use_template,
                 declaration_type=declaration_type,
                 declarations=declarations_list,  # ✅ 传递解析后的作品声明列表
-                article_images=article_images  # 传入文章配图
+                article_images=final_article_images  # 传入最终的文章配图（AI生成或用户上传）
             )
             
             if publish_result["status"] not in ["success", "pending"]:
@@ -799,6 +882,8 @@ def auto_publish_toutiao(
             
             # ========== 步骤 4: 保存记录 ==========
             logger.info(f"[步骤4/4] 保存发布记录...")
+            
+            # 保存内容任务
             content_task = ContentTask(
                 task_id=str(uuid.uuid4()),
                 original_topic=topic,
@@ -810,9 +895,21 @@ def auto_publish_toutiao(
                 status="completed"
             )
             db.add(content_task)
+            db.flush()  # 获取 content_task.id
+            
+            # ✅ 关键修复：保存发布记录（PublishRecord）
+            publish_record = PublishRecord(
+                account_id=account_id,
+                content_task_id=content_task.id,
+                publish_status="published",  # ✅ 直接使用字符串，不使用枚举
+                publish_time=datetime.now(),
+                platform_url=publish_result.get("article_url", ""),
+                error_message=None
+            )
+            db.add(publish_record)
             db.commit()
             
-            logger.info(f"✅ [步骤4/4] 记录保存成功！")
+            logger.info(f"✅ [步骤4/4] 发布记录保存成功！ID: {publish_record.id}")
             
             return {
                 "status": "success",
@@ -984,6 +1081,72 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         }
     }
 
+
+@router.get("/analytics/toutiao/articles", summary="获取头条文章数据分析")
+def get_toutiao_article_analytics(
+    account_id: int = Query(..., description="头条账号ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取头条文章的数据分析统计（阅读量、点赞数、评论数等）
+    
+    - **account_id**: 头条账号ID
+    """
+    from app.services.analytics.toutiao_analytics import get_analytics_service
+    from app.utils.async_helper import run_async_task
+    
+    # 检查账号是否存在
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    
+    async def fetch_analytics():
+        service = get_analytics_service(account_id=account_id, db=db)
+        try:
+            await service.initialize(headless=True)
+            
+            # 检查登录状态
+            login_success = await service.login_if_needed()
+            if not login_success:
+                return {
+                    "status": "error",
+                    "message": "账号未登录或Cookie失效，请先登录账号"
+                }
+            
+            # 抓取文章数据
+            articles = await service.fetch_article_analytics()
+            
+            if len(articles) == 0:
+                return {
+                    "status": "success",
+                    "articles": [],
+                    "total_articles": 0,
+                    "message": "未找到文章数据。可能原因：1)账号未发布过文章 2)Cookie已过期需要重新登录 3)头条页面结构变化",
+                    "summary": {
+                        "total_reads": 0,
+                        "total_likes": 0,
+                        "total_comments": 0,
+                        "total_shares": 0
+                    }
+                }
+            
+            return {
+                "status": "success",
+                "articles": articles,
+                "total_articles": len(articles),
+                "summary": {
+                    "total_reads": sum(a.get('read_count', 0) for a in articles),
+                    "total_likes": sum(a.get('like_count', 0) for a in articles),
+                    "total_comments": sum(a.get('comment_count', 0) for a in articles),
+                    "total_shares": sum(a.get('share_count', 0) for a in articles)
+                }
+            }
+        finally:
+            await service.close()
+    
+    result = run_async_task(fetch_analytics())
+    return result
+
 @router.post("/accounts/douyin/login")
 def douyin_login(account_id: int, username: str, password: str, db: Session = Depends(get_db)):
     """抖音账号登录（人工辅助）"""
@@ -1102,6 +1265,45 @@ def get_hot_trends(
             "error": f"获取热搜失败: {str(e)}",
             "fallback": True
         }
+
+@router.get("/content/recommended-topics", summary="获取智能推荐主题", description="基于热搜和历史数据推荐最可能火的主题")
+def get_recommended_topics(
+    account_id: Optional[int] = Query(None, description="账号ID（可选，用于个性化推荐）"),
+    count: int = Query(5, ge=1, le=10, description="返回数量"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取智能推荐主题
+    
+    - **account_id**: 账号ID（可选，提供后会根据历史表现个性化推荐）
+    - **count**: 返回推荐数量（1-10）
+    
+    结合实时热搜和账号历史数据，推荐最有可能火的创作主题
+    """
+    try:
+        from app.services.content.topic_recommender import get_topic_recommendation_service
+        
+        recommender = get_topic_recommendation_service(db)
+        
+        if account_id:
+            # 个性化推荐（结合历史数据）
+            recommendations = recommender.get_personalized_recommendations(account_id, count)
+            logger.info(f"✅ 为账号 {account_id} 生成个性化推荐")
+        else:
+            # 通用热门话题
+            recommendations = recommender.get_trending_topics("toutiao", count)
+            logger.info(f"✅ 生成通用热门话题推荐")
+        
+        return {
+            "status": "success",
+            "total": len(recommendations),
+            "recommendations": recommendations,
+            "formatted_text": recommender.format_recommendations_for_display(recommendations)
+        }
+        
+    except Exception as e:
+        logger.error(f"获取推荐主题失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取推荐主题失败: {str(e)}")
 
 # ==================== 快手发布 API ====================
 @router.post("/accounts/kuaishou/login", summary="快手账号登录")
@@ -2671,3 +2873,345 @@ def get_phone_records(
             "total": 0,
             "records": []
         }
+
+
+# ==================== LLM配置管理 API ====================
+@router.get("/llm-configs", summary="获取所有LLM配置")
+def get_llm_configs(
+    provider: str = Query(None, description="提供商过滤"),
+    function_type: str = Query(None, description="功能类型过滤"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有LLM配置列表
+    
+    - **provider**: 可选的提供商过滤 (siliconflow/modelscope/dashscope/deepseek/openai)
+    - **function_type**: 可选的功能类型过滤 (copywriting/cover_generation/image_generation/content_analysis)
+    """
+    from app.services.system.config_service import LLMConfigService
+    
+    llm_service = LLMConfigService(db)
+    configs = llm_service.get_all_llm_configs(provider=provider, function_type=function_type)
+    
+    return {
+        "status": "success",
+        "data": [
+            {
+                "id": config.id,
+                "provider": config.provider.value,
+                "function_type": config.function_type.value,
+                "name": config.name,
+                "base_url": config.base_url,
+                "model_name": config.model_name,
+                "image_model_name": config.image_model_name,
+                "timeout": config.timeout,
+                "max_tokens": config.max_tokens,
+                "temperature": config.temperature,
+                "is_default": config.is_default,
+                "is_active": config.is_active,
+                "priority": config.priority,
+                "description": config.description,
+                "last_test_time": config.last_test_time.isoformat() if config.last_test_time else None,
+                "last_test_status": config.last_test_status,
+                "created_at": config.created_at.isoformat(),
+                "updated_at": config.updated_at.isoformat()
+            }
+            for config in configs
+        ]
+    }
+
+
+@router.get("/llm-configs/{config_id}", summary="获取单个LLM配置")
+def get_llm_config(config_id: int, db: Session = Depends(get_db)):
+    """获取指定ID的LLM配置详情"""
+    from app.models import LLMConfig
+    
+    config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="配置不存在")
+    
+    return {
+        "status": "success",
+        "data": {
+            "id": config.id,
+            "provider": config.provider.value,
+            "function_type": config.function_type.value,
+            "name": config.name,
+            "api_key": config.api_key[:20] + "..." if config.api_key else None,  # 隐藏部分API密钥
+            "base_url": config.base_url,
+            "model_name": config.model_name,
+            "image_model_name": config.image_model_name,
+            "timeout": config.timeout,
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
+            "extra_params": config.extra_params,
+            "is_default": config.is_default,
+            "is_active": config.is_active,
+            "priority": config.priority,
+            "description": config.description,
+            "last_test_time": config.last_test_time.isoformat() if config.last_test_time else None,
+            "last_test_status": config.last_test_status,
+            "last_test_error": config.last_test_error,
+            "created_at": config.created_at.isoformat(),
+            "updated_at": config.updated_at.isoformat()
+        }
+    }
+
+
+@router.post("/llm-configs", summary="创建LLM配置")
+def create_llm_config(
+    provider: str,
+    function_type: str,
+    name: str,
+    api_key: str = None,
+    base_url: str = None,
+    model_name: str = None,
+    image_model_name: str = None,
+    timeout: int = 60,
+    max_tokens: int = 4096,
+    temperature: float = 0.7,
+    extra_params: dict = None,
+    is_default: bool = False,
+    is_active: bool = True,
+    priority: int = 0,
+    description: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    创建新的LLM配置
+    
+    - **provider**: 提供商 (siliconflow/modelscope/dashscope/deepseek/openai)
+    - **function_type**: 功能类型 (copywriting/cover_generation/image_generation/content_analysis)
+    - **name**: 配置名称
+    - **api_key**: API密钥
+    - **base_url**: API基础URL
+    - **model_name**: 模型名称
+    - **image_model_name**: 图像模型名称（可选）
+    - **timeout**: 超时时间（秒）
+    - **max_tokens**: 最大token数
+    - **temperature**: 温度参数
+    - **extra_params**: 额外参数（JSON）
+    - **is_default**: 是否为默认配置
+    - **is_active**: 是否启用
+    - **priority**: 优先级
+    - **description**: 描述
+    """
+    from app.services.system.config_service import LLMConfigService
+    from app.models import LLMProviderEnum, FunctionTypeEnum
+    
+    # 验证枚举值
+    try:
+        provider_enum = LLMProviderEnum(provider)
+        function_type_enum = FunctionTypeEnum(function_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"无效的枚举值: {e}")
+    
+    llm_service = LLMConfigService(db)
+    
+    # 如果设置为默认，取消同类型的其他默认配置
+    if is_default:
+        existing_default = llm_service.get_default_llm_config(function_type)
+        if existing_default:
+            llm_service.update_llm_config(existing_default.id, is_default=False)
+    
+    config = llm_service.create_llm_config(
+        provider=provider_enum,
+        function_type=function_type_enum,
+        name=name,
+        api_key=api_key,
+        base_url=base_url,
+        model_name=model_name,
+        image_model_name=image_model_name,
+        timeout=timeout,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        extra_params=extra_params,
+        is_default=is_default,
+        is_active=is_active,
+        priority=priority,
+        description=description
+    )
+    
+    return {
+        "status": "success",
+        "message": "LLM配置创建成功",
+        "data": {
+            "id": config.id,
+            "name": config.name
+        }
+    }
+
+
+@router.put("/llm-configs/{config_id}", summary="更新LLM配置")
+def update_llm_config(
+    config_id: int,
+    name: str = None,
+    api_key: str = None,
+    base_url: str = None,
+    model_name: str = None,
+    image_model_name: str = None,
+    timeout: int = None,
+    max_tokens: int = None,
+    temperature: float = None,
+    extra_params: dict = None,
+    is_default: bool = None,
+    is_active: bool = None,
+    priority: int = None,
+    description: str = None,
+    db: Session = Depends(get_db)
+):
+    """更新LLM配置"""
+    from app.services.system.config_service import LLMConfigService
+    
+    llm_service = LLMConfigService(db)
+    
+    # 如果设置为默认，取消同类型的其他默认配置
+    if is_default:
+        config = db.query(db.models.LLMConfig).filter(db.models.LLMConfig.id == config_id).first()
+        if config:
+            existing_default = llm_service.get_default_llm_config(config.function_type.value)
+            if existing_default and existing_default.id != config_id:
+                llm_service.update_llm_config(existing_default.id, is_default=False)
+    
+    update_data = {}
+    for key, value in locals().items():
+        if key not in ['config_id', 'db', 'llm_service', 'existing_default'] and value is not None:
+            update_data[key] = value
+    
+    config = llm_service.update_llm_config(config_id, **update_data)
+    if not config:
+        raise HTTPException(status_code=404, detail="配置不存在")
+    
+    return {
+        "status": "success",
+        "message": "LLM配置更新成功",
+        "data": {
+            "id": config.id,
+            "name": config.name
+        }
+    }
+
+
+@router.delete("/llm-configs/{config_id}", summary="删除LLM配置")
+def delete_llm_config(config_id: int, db: Session = Depends(get_db)):
+    """删除LLM配置"""
+    from app.services.system.config_service import LLMConfigService
+    
+    llm_service = LLMConfigService(db)
+    success = llm_service.delete_llm_config(config_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="配置不存在")
+    
+    return {
+        "status": "success",
+        "message": "LLM配置已删除"
+    }
+
+
+@router.post("/llm-configs/{config_id}/test", summary="测试LLM配置")
+def test_llm_config(config_id: int, db: Session = Depends(get_db)):
+    """
+    测试LLM配置是否可用
+    
+    返回测试结果和响应时间
+    """
+    from app.models import LLMConfig
+    from app.services.system.config_service import LLMConfigService
+    
+    config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="配置不存在")
+    
+    llm_service = LLMConfigService(db)
+    
+    # 根据功能类型选择测试方法
+    if config.function_type.value in ["image_generation", "cover_generation"]:
+        result = llm_service.test_image_model(config)
+    else:
+        result = llm_service.test_llm_config(config)
+    
+    return {
+        "status": result["status"],
+        "message": result.get("message", ""),
+        "error": result.get("error"),
+        "response": result.get("response"),
+        "elapsed_time": result.get("elapsed_time")
+    }
+
+
+@router.get("/api-usage/providers", summary="获取已配置的API提供商列表")
+def get_configured_providers(db: Session = Depends(get_db)):
+    """
+    获取所有已配置且启用的图像生成提供商
+    
+    返回：
+    - provider: 提供商名称
+    - config_name: 配置名称
+    """
+    from app.models import LLMConfig
+    
+    configs = db.query(LLMConfig).filter(
+        LLMConfig.function_type == "image_generation",
+        LLMConfig.is_active == True,
+        LLMConfig.api_key != None,
+        LLMConfig.api_key != ""
+    ).all()
+    
+    providers = [
+        {
+            "provider": config.provider.value,
+            "config_name": config.name
+        }
+        for config in configs
+    ]
+    
+    return {
+        "status": "success",
+        "providers": providers,
+        "total": len(providers)
+    }
+
+
+@router.get("/api-usage/{provider}", summary="查询API用量")
+async def get_api_usage(provider: str, db: Session = Depends(get_db)):
+    """
+    查询指定提供商的API用量/余额
+    
+    - **provider**: 提供商名称 (siliconflow/modelscope/dashscope)
+    
+    返回：
+    - 硅基流动：实际余额
+    - 魔搭社区/阿里百炼：API Key有效性 + 官网链接
+    """
+    from app.models import LLMConfig
+    from app.services.system.api_usage_service import APIUsageService
+    
+    # 获取该提供商的默认配置
+    config = db.query(LLMConfig).filter(
+        LLMConfig.provider == provider,
+        LLMConfig.function_type == "image_generation",
+        LLMConfig.is_active == True
+    ).first()
+    
+    if not config:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"未找到 {provider} 的配置，请先在LLM配置页面添加"
+        )
+    
+    if not config.api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{provider} 的API Key未配置"
+        )
+    
+    # 查询用量
+    result = await APIUsageService.get_provider_usage(provider, config.api_key)
+    
+    return {
+        "status": result["status"],
+        "provider": provider,
+        "config_name": config.name,
+        **result
+    }

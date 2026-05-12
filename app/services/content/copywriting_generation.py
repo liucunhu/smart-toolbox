@@ -3,12 +3,57 @@ from app.core.config import settings
 from app.utils.logger import logger
 from typing import Optional
 import re
+from sqlalchemy.orm import Session
+from app.db.session import SessionLocal
 
 class CopywritingGenerator:
     """平台差异化文案生成器"""
 
-    def __init__(self):
-        # 根据配置选择 AI 提供商
+    def __init__(self, db: Session = None):
+        """
+        初始化文案生成器
+        
+        Args:
+            db: 数据库会话（可选）。如果不提供，将尝试从数据库获取默认配置；
+                如果数据库配置不可用，则回退到配置文件。
+        """
+        self.db = db
+        self._initialize_client()
+    
+    def _initialize_client(self):
+        """初始化OpenAI客户端，优先使用数据库配置"""
+        # 尝试从数据库获取配置
+        config = self._get_llm_config_from_db()
+        
+        if config:
+            # 使用数据库配置
+            self.client = OpenAI(
+                api_key=config.api_key,
+                base_url=config.base_url,
+                timeout=float(config.timeout or 60)
+            )
+            self.model = config.model_name
+            logger.info(f"✅ AI 文案生成器已初始化，使用数据库配置: {config.provider.value} - {config.name}")
+        else:
+            # 回退到配置文件
+            self._initialize_from_settings()
+    
+    def _get_llm_config_from_db(self):
+        """从数据库获取LLM配置"""
+        if not self.db:
+            return None
+        
+        try:
+            from app.services.system.config_service import LLMConfigService
+            llm_service = LLMConfigService(self.db)
+            config = llm_service.get_default_llm_config("copywriting")
+            return config
+        except Exception as e:
+            logger.warning(f"从数据库获取LLM配置失败: {e}，将使用配置文件")
+            return None
+    
+    def _initialize_from_settings(self):
+        """从配置文件初始化（回退方案）"""
         provider = settings.LLM_PROVIDER.lower()
         
         if provider == "siliconflow":
@@ -39,7 +84,7 @@ class CopywritingGenerator:
             )
             self.model = "gpt-3.5-turbo"
         
-        logger.info(f"AI 文案生成器已初始化，使用提供商: {provider}")
+        logger.info(f"⚠️ AI 文案生成器已初始化（使用配置文件），提供商: {provider}")
 
     def _clean_markdown(self, text: str) -> str:
         """清理 Markdown 标签和写作提示词"""
@@ -158,11 +203,74 @@ class CopywritingGenerator:
         }
         return prompts.get(platform, prompts["douyin"])
 
-    def generate_script(self, platform: str, topic: str, max_retries: int = 2) -> Optional[dict]:
-        """生成脚本内容"""
+    def generate_script(self, platform: str, topic: str, max_retries: int = 2, enable_web_search: bool = True, optimized_prompt: Optional[str] = None) -> Optional[dict]:
+        """
+        生成脚本内容
+        
+        Args:
+            platform: 目标平台
+            topic: 创作主题
+            max_retries: 最大重试次数
+            enable_web_search: 是否启用网络搜索获取素材（默认True）
+            optimized_prompt: 优化的提示词模板（来自智能分析结果）
+        """
         for attempt in range(max_retries + 1):
             try:
+                # === 步骤1: 网络搜索获取实时素材 ===
+                web_materials = ""
+                if enable_web_search and platform == "toutiao":
+                    logger.info(f"🌐 开始搜索网络素材: {topic}")
+                    try:
+                        from app.services.content.web_search import get_web_search_service
+                        search_service = get_web_search_service()
+                        
+                        # 异步搜索（在同步函数中需要特殊处理）
+                        import asyncio
+                        try:
+                            loop = asyncio.get_running_loop()
+                            # 如果已经有事件循环，创建任务
+                            results = asyncio.run_coroutine_threadsafe(
+                                search_service.search_materials(topic, num_results=5),
+                                loop
+                            ).result(timeout=15)
+                        except RuntimeError:
+                            # 没有事件循环，直接运行
+                            results = asyncio.run(
+                                search_service.search_materials(topic, num_results=5)
+                            )
+                        
+                        if results:
+                            web_materials = search_service.format_search_results_for_prompt(results)
+                            logger.info(f"✅ 获取到 {len(results)} 条网络素材")
+                        else:
+                            logger.warning("⚠️  未获取到网络素材，将仅使用LLM知识")
+                    except Exception as e:
+                        logger.warning(f"⚠️  网络搜索失败: {e}，将仅使用LLM知识")
+                
+                # === 步骤2: 构建增强Prompt ===
                 system_prompt = self._get_platform_prompt(platform, topic)
+                
+                # 如果有优化的提示词，添加到system prompt中
+                if optimized_prompt:
+                    logger.info("🎯 应用智能分析优化后的提示词")
+                    system_prompt = f"{system_prompt}\n\n{optimized_prompt}"
+                
+                # 如果有网络素材，添加到用户消息中
+                user_message = f"请开始创作关于 {topic} 的内容"
+                if web_materials:
+                    user_message = f"""
+{web_materials}
+
+【创作要求】
+请基于以上网络素材进行二次原创，注意：
+1. 不要直接复制素材内容，要进行深度加工和重新组织
+2. 结合素材中的最新信息和数据
+3. 加入你自己的观点和分析
+4. 保持原创性，避免抄袭嫌疑
+5. 确保内容准确性和时效性
+
+主题：{topic}
+"""
                 
                 logger.info(f"开始生成 {platform} 平台内容（尝试 {attempt + 1}/{max_retries + 1}）...")
                 
@@ -170,7 +278,7 @@ class CopywritingGenerator:
                     model=self.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"请开始创作关于 {topic} 的内容"}
+                        {"role": "user", "content": user_message}
                     ],
                     temperature=0.8,  # 提高创造性
                     timeout=60.0  # ✅ 请求级别也设置60秒超时

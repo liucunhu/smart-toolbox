@@ -119,10 +119,19 @@ const stats = ref<DashboardStats>({
 const fetchStats = async () => {
   try {
     const response = await apiClient.get('/dashboard/stats')
-    stats.value = response.data.data
+    // ✅ 修复：axios拦截器已经解包，直接访问response.data，并处理可能的undefined
+    if (response.data) {
+      stats.value = response.data
+    } else {
+      stats.value = {
+        accounts: { total: 0, active: 0, nurturing: 0 },
+        content_tasks: { total: 0, completed: 0 },
+        publish_records: { total: 0, successful: 0 }
+      }
+    }
   } catch (error) {
     console.error('获取统计数据失败:', error)
-    ElMessage.error('获取统计数据失败')
+    // 保持默认值不变
   }
 }
 

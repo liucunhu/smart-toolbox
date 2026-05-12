@@ -10,13 +10,68 @@ from app.core.config import settings
 from app.utils.logger import logger
 from PIL import Image, ImageDraw, ImageFont
 import random
+from sqlalchemy.orm import Session
 
 
 class LLMCoverGenerator:
     """基于大模型的智能封面图生成器"""
     
-    def __init__(self):
-        # 初始化LLM客户端
+    def __init__(self, db: Session = None):
+        """
+        初始化LLM封面图生成器
+        
+        Args:
+            db: 数据库会话（可选）。如果不提供，将尝试从数据库获取默认配置；
+                如果数据库配置不可用，则回退到配置文件。
+        """
+        self.db = db
+        self._initialize_client()
+        
+        # 封面规格 (头条推荐 16:9)
+        self.cover_width = 1280
+        self.cover_height = 720
+        
+        # 输出目录
+        self.output_dir = "uploads/llm_covers"
+        os.makedirs(self.output_dir, exist_ok=True)
+    
+    def _initialize_client(self):
+        """初始化OpenAI客户端，优先使用数据库配置"""
+        # 尝试从数据库获取配置
+        config = self._get_llm_config_from_db()
+        
+        if config:
+            # 使用数据库配置
+            self.client = OpenAI(
+                api_key=config.api_key,
+                base_url=config.base_url,
+                timeout=float(config.timeout or 60)
+            )
+            self.model = config.model_name
+            logger.info(f"✅ LLM封面图生成器已初始化，使用数据库配置: {config.provider.value} - {config.name}")
+        else:
+            # 回退到配置文件
+            self._initialize_from_settings()
+    
+    def _get_llm_config_from_db(self):
+        """从数据库获取LLM配置"""
+        if not self.db:
+            return None
+        
+        try:
+            from app.services.system.config_service import LLMConfigService
+            llm_service = LLMConfigService(self.db)
+            # 优先使用内容分析配置，如果没有则使用文案生成配置
+            config = llm_service.get_default_llm_config("content_analysis")
+            if not config:
+                config = llm_service.get_default_llm_config("copywriting")
+            return config
+        except Exception as e:
+            logger.warning(f"从数据库获取LLM配置失败: {e}，将使用配置文件")
+            return None
+    
+    def _initialize_from_settings(self):
+        """从配置文件初始化（回退方案）"""
         provider = settings.LLM_PROVIDER.lower()
         
         if provider == "siliconflow":
@@ -42,15 +97,7 @@ class LLMCoverGenerator:
             self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
             self.model = "gpt-3.5-turbo"
         
-        logger.info(f"🤖 LLM封面图生成器已初始化，使用提供商: {provider}")
-        
-        # 封面规格 (头条推荐 16:9)
-        self.cover_width = 1280
-        self.cover_height = 720
-        
-        # 输出目录
-        self.output_dir = "uploads/llm_covers"
-        os.makedirs(self.output_dir, exist_ok=True)
+        logger.info(f"⚠️ LLM封面图生成器已初始化（使用配置文件），提供商: {provider}")
     
     def analyze_content_for_cover(self, title: str, content: str = "", category: str = "科技") -> Dict[str, Any]:
         """

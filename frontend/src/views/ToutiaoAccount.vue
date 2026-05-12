@@ -16,13 +16,42 @@
           <template #header>
             <div class="card-header">
               <span>📝 头条账号登录</span>
+              <el-button size="small" @click="loadAccounts" :loading="loadingAccounts">
+                🔄 刷新账号列表
+              </el-button>
             </div>
           </template>
           
-          <!-- 添加头条账号 -->
+          <!-- 账号选择器 -->
           <el-form :model="form" label-width="120px">
+            <el-form-item label="选择账号">
+              <el-select 
+                v-model="selectedAccountId" 
+                placeholder="请选择已保存的账号"
+                style="width: 100%;"
+                @change="handleAccountSelect"
+              >
+                <el-option
+                  v-for="account in savedAccounts"
+                  :key="account.id"
+                  :label="`${account.username} (ID: ${account.id})`"
+                  :value="account.id"
+                >
+                  <span>{{ account.username }}</span>
+                  <el-tag size="small" :type="account.has_cookies ? 'success' : 'warning'" style="margin-left: 8px;">
+                    {{ account.has_cookies ? '✓ Cookie有效' : '⚠ 需重新登录' }}
+                  </el-tag>
+                </el-option>
+              </el-select>
+              <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                💡 选择已保存的账号可直接登录，无需输入密码
+              </div>
+            </el-form-item>
+            
+            <el-divider>或添加新账号</el-divider>
+            
             <el-form-item label="手机号/邮箱">
-              <el-input v-model="form.username" placeholder="请输入头条账号（手机号或邮箱）" />
+              <el-input v-model="form.username" placeholder="请输入新的头条账号（手机号或邮箱）" />
             </el-form-item>
             
             <el-form-item label="密码">
@@ -46,9 +75,10 @@
             >
               <template #default>
                 <div style="font-size: 12px;">
-                  • 首次登录会自动创建账号记录<br/>
-                  • 系统会打开浏览器，自动填充账号密码<br/>
-                  • 登录成功后 Cookie 会自动保存
+                  • 选择已保存的账号：直接登录（使用Cookie或数据库密码）<br/>
+                  • 添加新账号：输入账号密码，首次登录自动创建记录<br/>
+                  • 登录成功后 Cookie 会自动保存到数据库<br/>
+                  • 支持多账号切换，方便管理多个头条号
                 </div>
               </template>
             </el-alert>
@@ -80,11 +110,64 @@
             <el-form-item label="文章主题">
               <el-input 
                 v-model="publishForm.topic" 
-                placeholder="例如：Python自动化办公技巧"
+                placeholder="输入主题，留空则自动推荐热门话题"
                 type="textarea"
                 :rows="2"
-              />
+                clearable
+              >
+                <template #suffix>
+                  <el-button 
+                    link 
+                    type="primary" 
+                    @click="loadRecommendedTopics" 
+                    :loading="loadingTopics"
+                    style="padding: 0 5px;"
+                  >
+                    🔥 获取推荐
+                  </el-button>
+                </template>
+              </el-input>
+              <el-text size="small" type="info" style="margin-top: 5px; display: block;">
+                💡 留空将自动根据热搜和历史数据推荐最可能火的主题
+              </el-text>
             </el-form-item>
+
+            <!-- 🌟 推荐主题列表 -->
+            <el-card 
+              v-if="recommendedTopics.length > 0" 
+              shadow="never" 
+              style="margin-bottom: 15px; border: 2px solid #409EFF; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;"
+            >
+              <template #header>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-weight: bold; font-size: 16px;">🔥 智能推荐主题</span>
+                  <el-tag type="success" size="small">AI驱动</el-tag>
+                </div>
+              </template>
+              <div 
+                v-for="(topic, index) in recommendedTopics" 
+                :key="index"
+                class="recommendation-item"
+                @click="selectRecommendedTopic(topic)"
+                style="cursor: pointer; padding: 10px; margin-bottom: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 6px; transition: all 0.3s;"
+                @mouseenter="$event.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'"
+                @mouseleave="$event.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'"
+              >
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                  <el-tag :type="getConfidenceType(topic.confidence)" size="small" effect="dark">
+                    {{ (topic.confidence * 100).toFixed(0) }}%
+                  </el-tag>
+                  <span style="font-weight: bold; font-size: 14px; flex: 1;">{{ topic.topic }}</span>
+                </div>
+                <div style="font-size: 12px; opacity: 0.9; display: flex; align-items: center; gap: 5px;">
+                  <el-icon><InfoFilled /></el-icon>
+                  {{ topic.reason }}
+                </div>
+              </div>
+              <div style="text-align: center; margin-top: 10px; font-size: 12px; opacity: 0.8;">
+                💡 点击任一主题可快速开始创作
+              </div>
+            </el-card>
 
             <el-form-item label="文章分类">
               <el-select v-model="publishForm.category" placeholder="请选择分类">
@@ -166,22 +249,41 @@
               </el-checkbox>
               
               <div v-if="publishForm.enableImages">
-                <el-upload
-                  action="#"
-                  :auto-upload="false"
-                  :on-change="handleImageSelect"
-                  :limit="9"
-                  accept="image/*"
-                  multiple
-                  list-type="picture-card"
-                >
-                  <el-icon><Plus /></el-icon>
-                  <template #tip>
-                    <div class="el-upload__tip">最多上传9张图片，支持jpg/png格式</div>
-                  </template>
-                </el-upload>
-                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-                  💡 配图将插入到文章内容中，增强视觉效果
+                <!-- 配图来源选择 -->
+                <el-radio-group v-model="publishForm.imageSourceType" style="margin-bottom: 10px;">
+                  <el-radio value="ai">🤖 AI自动生成</el-radio>
+                  <el-radio value="upload">📁 上传自定义</el-radio>
+                </el-radio-group>
+                
+                <!-- AI自动生成选项 -->
+                <div v-if="publishForm.imageSourceType === 'ai'">
+                  <el-form-item label="生成数量" label-width="80px">
+                    <el-input-number v-model="publishForm.numImages" :min="1" :max="9" style="width: 100%;" />
+                  </el-form-item>
+                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                    💡 AI会根据文章内容自动生成配图，增强视觉效果
+                  </div>
+                </div>
+                
+                <!-- 上传自定义选项 -->
+                <div v-if="publishForm.imageSourceType === 'upload'">
+                  <el-upload
+                    action="#"
+                    :auto-upload="false"
+                    :on-change="handleImageSelect"
+                    :limit="9"
+                    accept="image/*"
+                    multiple
+                    list-type="picture-card"
+                  >
+                    <el-icon><Plus /></el-icon>
+                    <template #tip>
+                      <div class="el-upload__tip">最多上传9张图片，支持jpg/png格式</div>
+                    </template>
+                  </el-upload>
+                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                    💡 配图将插入到文章内容中，增强视觉效果
+                  </div>
                 </div>
               </div>
               
@@ -254,18 +356,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, InfoFilled } from '@element-plus/icons-vue'
 import apiClient from '../utils/api'
 import ComplianceCheckDialog from '../components/ComplianceCheckDialog.vue'
 import { checkContentCompliance, type ContentComplianceResponse } from '../api/compliance'
 
 const loading = ref(false)
+const loadingAccounts = ref(false)  // ✅ 加载账号列表的状态
 const publishing = ref(false)
 const loginResult = ref<any>(null)
 const publishResult = ref<any>(null)
 const complianceDialog = ref<InstanceType<typeof ComplianceCheckDialog> | null>(null)
+const selectedAccountId = ref<number | null>(null)  // ✅ 选中的账号ID
+
+// ✅ 已保存的头条账号列表
+interface SavedAccount {
+  id: number
+  username: string
+  has_password: boolean
+  has_cookies: boolean
+  status: string
+}
+const savedAccounts = ref<SavedAccount[]>([])
 
 // 临时存储待发布的数据
 const pendingPublishData = ref<{
@@ -289,7 +403,9 @@ const publishForm = ref({
   enableCover: true,  // ✅ 是否启用封面图
   coverType: 'auto' as 'auto' | 'upload',  // ✅ 封面类型：AI自动生成或上传自定义
   coverStyle: 'modern',  // ✅ AI封面风格
-  enableImages: false  // ✅ 是否启用文章配图
+  enableImages: false,  // ✅ 是否启用文章配图
+  imageSourceType: 'ai' as 'ai' | 'upload',  // ✅ 配图来源：AI生成或上传
+  numImages: 2  // ✅ AI生成配图数量
 })
 
 const coverFile = ref<File | null>(null)
@@ -299,9 +415,97 @@ const coverPreview = ref<string>('')
 const imageFiles = ref<File[]>([])
 const imagePreviews = ref<string[]>([])
 
+// 🌟 推荐主题相关
+const recommendedTopics = ref<any[]>([])
+const loadingTopics = ref(false)
+
 const isLoggedIn = computed(() => {
   return loginResult.value?.status === 'success'
 })
+
+/**
+ * ✅ 加载已保存的头条账号列表
+ */
+const loadAccounts = async () => {
+  loadingAccounts.value = true
+  try {
+    // ✅ 修复：使用正确的 API 路径和参数名
+    const response = await apiClient.get('/accounts/list', {
+      params: {
+        platform: 'toutiao',
+        page: 1,
+        page_size: 100
+      }
+    })
+    
+    // ✅ 修复：解析正确的响应数据结构
+    if (response.data.status === 'success' && response.data.data) {
+      const accounts = response.data.data.items || []
+      savedAccounts.value = accounts.map((account: any) => ({
+        id: account.id,
+        username: account.username,
+        has_password: account.has_password,
+        has_cookies: account.has_cookies,
+        status: account.status
+      }))
+      
+      ElMessage.success(`✅ 已加载 ${savedAccounts.value.length} 个头条账号`)
+    }
+  } catch (error: any) {
+    console.error('加载账号列表失败:', error)
+    ElMessage.error('❌ 加载账号列表失败')
+  } finally {
+    loadingAccounts.value = false
+  }
+}
+
+/**
+ * ✅ 选择账号并自动登录
+ */
+const handleAccountSelect = async (accountId: number) => {
+  if (!accountId) return
+  
+  loading.value = true
+  try {
+    // 使用账号ID直接登录，后端会自动使用数据库中的密码
+    const response = await apiClient.post(
+      '/accounts/toutiao/login',
+      null,
+      {
+        params: {
+          account_id: accountId
+          // 不传入 username 和 password，后端会从数据库获取
+        }
+      }
+    )
+
+    if (response.data.status === 'success') {
+      loginResult.value = response.data
+      currentAccountId.value = response.data.account_id || null
+      ElMessage.success(`✅ 账号 ${response.data.username} 登录成功！`)
+      
+      // 触发账号列表刷新
+      window.dispatchEvent(new CustomEvent('account-updated', {
+        detail: {
+          account_id: response.data.account_id,
+          platform: 'toutiao'
+        }
+      }))
+    } else {
+      loginResult.value = response.data
+      ElMessage.error('❌ 登录失败：' + (response.data.message || '未知错误'))
+    }
+  } catch (error: any) {
+    console.error('登录失败:', error)
+    loginResult.value = {
+      status: 'error',
+      error: error.response?.data?.detail || '登录失败，请检查后端服务'
+    }
+    ElMessage.error('❌ 登录失败：' + (error.response?.data?.detail || '请检查后端服务'))
+  } finally {
+    loading.value = false
+  }
+}
 
 /**
  * 处理封面图选择
@@ -456,16 +660,17 @@ const handleAutoPublish = async () => {
         params: {
           account_id: currentAccountId.value,
           topic: publishForm.value.topic,
-          username: form.value.username,
-          password: form.value.password,
+          // ✅ 不再传入 username 和 password，后端会自动从数据库中获取
           category: publishForm.value.category,
           cover_image_path: coverImagePath,
           auto_generate_cover: autoGenerateCover,  // ✅ 根据用户选择决定是否生成
           cover_style: publishForm.value.coverStyle,  // ✅ 使用用户选择的风格
-          use_cdp: true,              // ✅ 使用CDP模式
-          cdp_port: 9222,
+          use_cdp: false,             // ⚠️ CDP模式不可用，使用标准模式
+          cdp_port: 9222,             // 保留参数以兼容
           declarations: JSON.stringify(publishForm.value.declarations),  // ✅ 使用用户选择的声明（多选）
-          article_images: uploadedImagePaths  // ✅ 传递配图路径列表
+          article_images: uploadedImagePaths,  // ✅ 传递配图路径列表（用户上传时）
+          auto_generate_images: publishForm.value.enableImages && publishForm.value.imageSourceType === 'ai',  // ✅ AI自动生成配图
+          num_images: publishForm.value.numImages  // ✅ 生成配图数量
         }
       }
     )
@@ -523,6 +728,75 @@ const handleConfirmPublish = () => {
 const handleCloseCompliance = () => {
   // 清理逻辑
 }
+
+/**
+ * ✅ 页面加载时自动加载账号列表
+ */
+onMounted(() => {
+  loadAccounts()
+})
+
+/**
+ * 🌟 加载推荐主题
+ */
+const loadRecommendedTopics = async () => {
+  if (!currentAccountId.value) {
+    ElMessage.warning('请先登录账号')
+    return
+  }
+  
+  loadingTopics.value = true
+  try {
+    const response = await apiClient.get('/content/recommended-topics', {
+      params: {
+        account_id: currentAccountId.value,
+        count: 5
+      }
+    })
+    
+    if (response.data.status === 'success') {
+      recommendedTopics.value = response.data.recommendations || []
+      
+      if (recommendedTopics.value.length > 0) {
+        ElMessage.success(`✅ 获取到 ${recommendedTopics.value.length} 个推荐主题`)
+      } else {
+        ElMessage.info('ℹ️  暂无推荐主题，请稍后重试')
+      }
+    } else {
+      ElMessage.error('❌ 获取推荐失败')
+    }
+  } catch (error: any) {
+    console.error('获取推荐主题失败:', error)
+    ElMessage.error('❌ 获取推荐失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    loadingTopics.value = false
+  }
+}
+
+/**
+ * 🌟 选择推荐主题
+ */
+const selectRecommendedTopic = (topic: any) => {
+  publishForm.value.topic = topic.topic
+  ElMessage.success(`✅ 已选择: ${topic.topic}`)
+  
+  // 滚动到发布按钮
+  setTimeout(() => {
+    const publishButton = document.querySelector('.el-button--success')
+    if (publishButton) {
+      publishButton.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, 100)
+}
+
+/**
+ * 🌟 获取置信度标签类型
+ */
+const getConfidenceType = (confidence: number): 'success' | 'warning' | 'danger' | '' => {
+  if (confidence >= 0.8) return 'success'
+  if (confidence >= 0.6) return 'warning'
+  return 'danger'
+}
 </script>
 
 <style scoped lang="scss">
@@ -542,5 +816,15 @@ const handleCloseCompliance = () => {
 
 .cover-preview {
   margin-top: 10px;
+}
+
+.recommendation-item {
+  &:hover {
+    transform: translateX(5px);
+  }
+  
+  &:active {
+    transform: scale(0.98);
+  }
 }
 </style>

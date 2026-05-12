@@ -54,6 +54,9 @@ class ContentTask(Base):
     original_topic = Column(Text)
     target_platform = Column(Enum(PlatformEnum, values_callable=lambda x: [e.value for e in x]))
     
+    # 任务类型
+    task_type = Column(String(50))  # generate_script, process_video, generate_cover, compliance_check, publish, ai_cover, template_cover
+    
     # 生成结果存储路径（视频类内容）
     script_path = Column(String(255))
     video_path = Column(String(255))
@@ -65,8 +68,19 @@ class ContentTask(Base):
     article_category = Column(String(100))  # 文章分类
     tags = Column(JSON)  # 标签列表
     
-    status = Column(String(20), default="pending")  # pending, processing, completed, failed
+    # 任务状态和进度
+    status = Column(String(20), default="pending")  # pending, processing, completed, failed, cancelled
+    progress = Column(Integer, default=0)  # 进度百分比 0-100
+    
+    # 时间戳
+    started_at = Column(DateTime)  # 开始时间
+    completed_at = Column(DateTime)  # 完成时间
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 错误信息和数据
+    error_message = Column(Text)  # 错误信息
+    input_data = Column(JSON)  # 输入数据
+    output_data = Column(JSON)  # 输出数据
 
 class PublishRecord(Base):
     """分发记录表"""
@@ -176,6 +190,99 @@ class AccountHealthMetrics(Base):
     
     # 关联关系
     account = relationship("Account", back_populates="health_metrics")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LLMProviderEnum(str, enum.Enum):
+    """大模型提供商枚举"""
+    SILICONFLOW = "siliconflow"
+    MODELSCOPE = "modelscope"
+    DASHSCOPE = "dashscope"
+    DEEPSEEK = "deepseek"
+    OPENAI = "openai"
+
+
+class FunctionTypeEnum(str, enum.Enum):
+    """功能类型枚举"""
+    COPYWRITING = "copywriting"  # 文案生成
+    COVER_GENERATION = "cover_generation"  # 封面图生成
+    IMAGE_GENERATION = "image_generation"  # 配图生成
+    CONTENT_ANALYSIS = "content_analysis"  # 内容分析
+
+
+class LLMConfig(Base):
+    """大模型配置表"""
+    __tablename__ = "llm_configs"
+    
+    # 索引优化
+    __table_args__ = (
+        Index('idx_provider_function', 'provider', 'function_type'),
+        Index('idx_is_default', 'is_default'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # 基础信息
+    provider = Column(Enum(LLMProviderEnum, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    function_type = Column(Enum(FunctionTypeEnum, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    name = Column(String(100), nullable=False)  # 配置名称
+    
+    # API配置
+    api_key = Column(String(500))  # API密钥（加密存储）
+    base_url = Column(String(500))  # API基础URL
+    model_name = Column(String(200), nullable=False)  # 模型名称
+    
+    # 图像模型专用字段
+    image_model_name = Column(String(200))  # 图像生成模型名称
+    
+    # 配置参数
+    timeout = Column(Integer, default=60)  # 超时时间（秒）
+    max_tokens = Column(Integer, default=4096)  # 最大token数
+    temperature = Column(Float, default=0.7)  # 温度参数
+    extra_params = Column(JSON)  # 额外参数（JSON格式）
+    
+    # 状态标识
+    is_default = Column(Boolean, default=False, index=True)  # 是否为默认配置
+    is_active = Column(Boolean, default=True, index=True)  # 是否启用
+    priority = Column(Integer, default=0)  # 优先级（数字越大优先级越高）
+    
+    # 描述信息
+    description = Column(Text)  # 配置描述
+    
+    # 测试信息
+    last_test_time = Column(DateTime)  # 最后测试时间
+    last_test_status = Column(String(20))  # 最后测试结果：success/failed
+    last_test_error = Column(Text)  # 最后测试错误信息
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SystemConfig(Base):
+    """系统配置表 - 存储所有系统配置项"""
+    __tablename__ = "system_configs"
+    
+    # 索引优化
+    __table_args__ = (
+        Index('idx_config_category', 'category'),
+        Index('idx_config_key', 'config_key', unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # 配置分类
+    category = Column(String(50), nullable=False, index=True)  # 配置分类：database, redis, celery, jwt, nurturing, playwright, alert, sms, hot_trend等
+    config_key = Column(String(100), nullable=False, unique=True, index=True)  # 配置键
+    config_value = Column(Text)  # 配置值（文本格式）
+    value_type = Column(String(20), default="string")  # 值类型：string/int/float/bool/json/list
+    
+    # 配置信息
+    description = Column(Text)  # 配置描述
+    is_encrypted = Column(Boolean, default=False)  # 是否加密存储
+    is_required = Column(Boolean, default=False)  # 是否必需
+    default_value = Column(Text)  # 默认值
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
