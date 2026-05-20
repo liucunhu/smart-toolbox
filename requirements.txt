@@ -40,7 +40,7 @@ python-jose[cryptography]==3.3.0
 
 # HTTP Client
 httpx==0.28.1
-requests==2.32.3
+requests==2.33.0
 beautifulsoup4==4.12.3
 
 # Testing
