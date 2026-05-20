@@ -4,12 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import sys
 import asyncio
 from app.core.config import settings
-from app.api.v1.endpoints import router as api_router
+from app.api.v1 import api_router
 from app.api.v1.health import router as health_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.content_tasks import router as content_tasks_router
 from app.api.v1.new_features import router as new_features_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.webpack_hmr_router import router as webpack_hmr_router
 from app.models import Base
 from app.db.session import engine
 from app.utils.logger import logger
@@ -50,6 +51,14 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️  当前事件循环为 {type(current_loop).__name__}，Playwright 可能需要 ProactorEventLoop")
             logger.warning("   如果遇到 NotImplementedError，请重启服务并使用 python start_server.py")
     
+    # 初始化智能体任务执行器 (Phase 4)
+    try:
+        from app.services.agents.executor_initializer import initialize_executors
+        initialize_executors()
+        logger.info("✅ 智能体任务执行器初始化成功")
+    except Exception as e:
+        logger.error(f"❌ 智能体任务执行器初始化失败: {str(e)}")
+    
     yield  # 应用运行期间
     
     # Shutdown
@@ -79,6 +88,7 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(content_tasks_router, prefix="/api/v1")
 app.include_router(new_features_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(webpack_hmr_router)  # 注册 webpack HMR 路由
 
 @app.get("/")
 def read_root():

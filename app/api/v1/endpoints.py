@@ -1,10 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models import Account, PlatformEnum, AccountStatusEnum, ContentTask, PublishRecord
+from app.models import Account, PlatformEnum, AccountStatusEnum, ContentTask, PublishRecord, Novel, Chapter, FanqieAnalytics
 from app.schemas.account import AccountCreate, AccountResponse, AccountListResponse, AccountUpdateRequest
 from app.tasks.account_tasks import register_account_task
 from app.tasks.content_tasks import generate_script_task, process_video_task
+from app.tasks.toutiao_tasks import (
+    auto_publish_toutiao_task,
+    fetch_toutiao_analytics_task,
+    check_account_health_task,
+    update_income_stats_task,
+    hot_topic_monitor_task
+)
 from app.services.distribute.ac_filter import HighPerformanceFilter
 from app.services.operations.health_monitor import AccountHealthService
 from app.services.operations.smart_scheduler import SmartScheduler
@@ -249,12 +256,13 @@ def create_account(
     }
 
 @router.post("/content/generate", summary="生成文案", description="使用AI生成爆款文案或文章")
-def generate_content(topic: str, platform: PlatformEnum, db: Session = Depends(get_db)):
+def generate_content(topic: str, platform: PlatformEnum, account_id: Optional[int] = None, db: Session = Depends(get_db)):
     """
     生成爆款文案 (同步，直接返回结果)
     
     - **topic**: 内容主题
     - **platform**: 目标平台
+    - **account_id**: 账号ID（可选，用于获取自适应进化配置）
     
     头条平台返回结构化文章（标题、内容、分类、标签）
     其他平台返回短视频脚本
@@ -262,7 +270,7 @@ def generate_content(topic: str, platform: PlatformEnum, db: Session = Depends(g
     try:
         from app.services.content.copywriting_generation import CopywritingGenerator
         generator = CopywritingGenerator(db=db)
-        result = generator.generate_script(platform.value, topic)
+        result = generator.generate_script(platform.value, topic, account_id=account_id)
         
         if result:
             if platform.value == "toutiao":
@@ -319,7 +327,7 @@ def check_compliance(text: str, platform: str):
     return result
 
 @router.get("/accounts/healthy", summary="获取健康账号", description="查询可用于分发的健康账号列表")
-def get_healthy_accounts(platform: str = None, db: Session = Depends(get_db)):
+def get_healthy_accounts(platform: Optional[str] = None, db: Session = Depends(get_db)):
     """
     获取可用于分发的健康账号列表
     
@@ -395,6 +403,12 @@ def toutiao_login(account_id: int = None, username: str = None, password: str = 
             db.commit()
             db.refresh(account)
             logger.info(f"✅ 账号创建成功，ID: {account.id}")
+        else:
+            # 账号已存在，更新密码
+            account.password = password
+            account.status = AccountStatusEnum.ACTIVE
+            db.commit()
+            logger.info(f"✅ 账号已存在，更新密码，ID: {account.id}")
     else:
         return {
             "message": "请提供账号ID或用户名+密码",
@@ -519,6 +533,13 @@ def publish_toutiao_article(
             db.commit()
             db.refresh(account)
             logger.info(f"✅ 账号创建成功，ID: {account.id}")
+            account_id = account.id  # 更新 account_id
+        else:
+            # 账号已存在，更新密码
+            account.password = password
+            account.status = AccountStatusEnum.ACTIVE
+            db.commit()
+            logger.info(f"✅ 账号已存在，更新密码，ID: {account.id}")
             account_id = account.id  # 更新 account_id
     else:
         return {
@@ -669,6 +690,9 @@ def auto_publish_toutiao(
         return {"message": "账号不存在", "status": "error"}
     
     async def auto_publish_process():
+        # ✅ 关键修复：显式声明使用全局json模块，避免作用域冲突
+        import json as global_json
+        
         publisher = ToutiaoPublisher(account_id=account_id)
         try:
             # ========== 步骤 1: 智能登录 ==========
@@ -692,6 +716,15 @@ def auto_publish_toutiao(
                 if login_success:
                     login_method = "cookie"
                     logger.info(f"✅ Cookie登录成功！")
+                    # ✅ 关键修复：Cookie登录成功后，获取最新的Cookie并更新到数据库
+                    try:
+                        current_cookies = await publisher.context.cookies()
+                        if current_cookies:
+                            account.cookies = global_json.dumps(current_cookies)
+                            db.commit()
+                            logger.info(f"✅ Cookie已更新到数据库")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 更新Cookie到数据库失败: {e}")
             
             # 如果Cookie失效，使用账号密码登录（优先使用传入的参数，其次使用数据库中的）
             if not login_success:
@@ -726,199 +759,280 @@ def auto_publish_toutiao(
             
             logger.info(f"✅ [步骤1/4] 登录成功（方式: {login_method}）")
             
-            # ========== 步骤 2: AI生成文章 ==========
+            # ========== 步骤 2-7: AI生成文章 + 合规检测 + 爆款检测 + 发布（支持自动重试）==========
+            MAX_RETRY_COUNT = 3  # 最大重试次数
+            retry_count = 0
+            publish_success = False
+            last_error = None
             
-            # === 步骤 2.0: 如果未提供主题，自动推荐热门主题 ===
-            if not topic or topic.strip() == "":
-                logger.info(f"🔥 未指定主题，开始智能推荐热门话题...")
-                try:
-                    from app.services.content.topic_recommender import get_topic_recommendation_service
-                    recommender = get_topic_recommendation_service(db)
-                    
-                    # 获取个性化推荐（基于账号历史数据）
-                    recommendations = recommender.get_personalized_recommendations(account_id, count=3)
-                    
-                    if recommendations:
-                        # 选择置信度最高的主题
-                        best_recommendation = recommendations[0]
-                        topic = best_recommendation.get("topic", "")
-                        reason = best_recommendation.get("reason", "")
-                        confidence = best_recommendation.get("confidence", 0)
-                        
-                        logger.info(f"✅ [步骤2.0] 自动推荐主题: {topic}")
-                        logger.info(f"   推荐理由: {reason}")
-                        logger.info(f"   置信度: {confidence:.0%}")
-                    else:
-                        # 如果没有推荐，使用默认主题
-                        topic = "AI技术在2026年的最新应用"
-                        logger.warning(f"⚠️  未能获取推荐主题，使用默认主题: {topic}")
-                        
-                except Exception as e:
-                    logger.error(f"❌ 主题推荐失败: {e}，使用默认主题")
-                    topic = "AI技术在2026年的最新应用"
-            
-            logger.info(f"[步骤2/4] 开始生成文章内容，主题: {topic}...")
-            
-            # === 步骤 2.1: 获取智能分析结果（如果可用）===
-            optimized_prompt = ""
-            try:
-                from app.services.analytics.analytics_cache import get_analytics_cache_service
-                cache_service = get_analytics_cache_service(db)
+            while retry_count < MAX_RETRY_COUNT and not publish_success:
+                if retry_count > 0:
+                    logger.info(f"\n{'='*60}")
+                    logger.info(f"🔄 第 {retry_count} 次重新生成文章（原因: {last_error}）")
+                    logger.info(f"{'='*60}\n")
                 
-                # 检查是否有可用的分析结果
-                if cache_service.is_analysis_available(account_id):
-                    optimized_prompt = cache_service.get_optimized_prompt(account_id)
-                    if optimized_prompt:
-                        logger.info(f"✅ [步骤2.1] 获取到账号 {account_id} 的智能分析优化提示词")
-                    else:
-                        logger.info(f"ℹ️  [步骤2.1] 未找到优化提示词，将使用默认提示词")
-                else:
-                    logger.info(f"ℹ️  [步骤2.1] 暂无分析结果，建议先进行数据分析")
-                    
-            except Exception as e:
-                logger.warning(f"⚠️  获取智能分析结果失败: {e}，将使用默认提示词")
-            
-            generator = CopywritingGenerator(db=db)
-            
-            # === 步骤 2.2: 生成文章（启用网络搜索 + 智能分析优化）===
-            article_result = generator.generate_script(
-                platform="toutiao",
-                topic=topic,
-                enable_web_search=True,  # 启用网络搜索获取实时素材
-                optimized_prompt=optimized_prompt if optimized_prompt else None  # 应用优化提示词
-            )
-            
-            if not article_result:
-                return {
-                    "status": "failed",
-                    "step": "generate",
-                    "error": "AI 生成文章失败"
-                }
-            
-            # 解析文章结构
-            article_title = article_result.get("title", f"{topic}的深度解析")
-            article_content = article_result.get("content", "")
-            article_tags = article_result.get("tags", [])
-            
-            logger.info(f"✅ [步骤2/4] 文章生成成功！标题: {article_title}")
-            
-            # ========== 步骤 2.5: 合规审查（必须）==========
-            logger.info(f"🔍 [步骤2.5/5] 正在进行合规审查...")
-            compliance_result = check_content_compliance(article_title, article_content, "toutiao")
-            if not compliance_result["passed"]:
-                logger.warning(f"⚠️  合规审查失败: {compliance_result['error']}")
-                return {
-                    "status": "failed",
-                    "step": "compliance",
-                    "error": compliance_result["error"]
-                }
-            logger.info(f"✅ [步骤2.5/5] 合规审查通过")
-            
-            # ========== 步骤 2.6: 生成文章配图 ==========
-            final_article_images = []
-            
-            if auto_generate_images:
-                # AI自动生成配图
-                logger.info(f"🖼️  [步骤2.6/5] 开始AI生成文章配图...")
-                from app.services.content.article_image_generator import ArticleImageGenerator
-                image_generator = ArticleImageGenerator(use_ai=True, db=db)  # 强制使用AI生成，传递db
-                article_images_info = await image_generator.generate_images_for_article(
-                    title=article_title,
-                    content=article_content,
-                    num_images=num_images,
-                    category=category,
-                    enable_ab_test=True  # 启用A/B测试
-                )
-                final_article_images = [img["file_path"] for img in article_images_info]
-                if final_article_images:
-                    logger.info(f"✅ [步骤2.6/5] AI文章配图生成成功，共 {len(final_article_images)} 张")
-                    for i, img_path in enumerate(final_article_images, 1):
-                        logger.info(f"   配图{i}: {img_path}")
-                else:
-                    logger.warning(f"⚠️  AI文章配图生成失败")
-            elif article_images:
-                # 使用用户上传的配图
-                logger.info(f"📁 [步骤2.6/5] 使用用户上传的文章配图: {len(article_images)} 张")
-                final_article_images = article_images
-            else:
-                logger.info(f"ℹ️  [步骤2.6/5] 未配置文章配图，将不上传配图")
-            
-            # ========== 步骤 2.7: 解析作品声明 ==========
-            import json
-            if declarations and isinstance(declarations, str):
                 try:
-                    declarations_list = json.loads(declarations)
-                    logger.info(f"✅ 作品声明解析成功: {declarations_list}")
+                    # === 步骤 2.0: 如果未提供主题，自动推荐热门主题 ===
+                    # ✅ 使用新变量避免作用域问题
+                    final_topic = topic or ""
+                    
+                    if not final_topic or final_topic.strip() == "":
+                        logger.info(f"🔥 未指定主题，开始智能推荐热门话题...")
+                        try:
+                            from app.services.content.topic_recommender import get_topic_recommendation_service
+                            recommender = get_topic_recommendation_service(db)
+                            
+                            # 获取个性化推荐（基于账号历史数据）
+                            recommendations = recommender.get_personalized_recommendations(account_id, count=3)
+                            
+                            if recommendations:
+                                # 选择置信度最高的主题
+                                best_recommendation = recommendations[0]
+                                final_topic = best_recommendation.get("topic", "")
+                                reason = best_recommendation.get("reason", "")
+                                confidence = best_recommendation.get("confidence", 0)
+                                
+                                logger.info(f"✅ [步骤2.0] 自动推荐主题: {final_topic}")
+                                logger.info(f"   推荐理由: {reason}")
+                                logger.info(f"   置信度: {confidence:.0%}")
+                            else:
+                                # 如果没有推荐，使用默认主题
+                                final_topic = "AI技术在2026年的最新应用"
+                                logger.warning(f"⚠️  未能获取推荐主题，使用默认主题: {final_topic}")
+                                
+                        except Exception as e:
+                            logger.error(f"❌ 主题推荐失败: {e}，使用默认主题")
+                            final_topic = "AI技术在2026年的最新应用"
+                    
+                    logger.info(f"[步骤2/7] 开始生成文章内容，主题: {final_topic}...")
+                
+                    # === 步骤 2.1: 获取智能分析结果（如果可用）===
+                    optimized_prompt = ""
+                    try:
+                        from app.services.analytics.analytics_cache import get_analytics_cache_service
+                        cache_service = get_analytics_cache_service(db)
+                        
+                        # 检查是否有可用的分析结果
+                        if cache_service.is_analysis_available(account_id):
+                            optimized_prompt = cache_service.get_optimized_prompt(account_id)
+                            if optimized_prompt:
+                                logger.info(f"✅ [步骤2.1] 获取到账号 {account_id} 的智能分析优化提示词")
+                            else:
+                                logger.info(f"ℹ️  [步骤2.1] 未找到优化提示词，将使用默认提示词")
+                        else:
+                            logger.info(f"ℹ️  [步骤2.1] 暂无分析结果，建议先进行数据分析")
+                            
+                    except Exception as e:
+                        logger.warning(f"⚠️  获取智能分析结果失败: {e}，将使用默认提示词")
+                    
+                    generator = CopywritingGenerator(db=db)
+                    
+                    # === 步骤 2.2: 生成文章（启用网络搜索 + 智能分析优化）===
+                    article_result = generator.generate_script(
+                        platform="toutiao",
+                        topic=final_topic,
+                        enable_web_search=True,  # 启用网络搜索获取实时素材
+                        optimized_prompt=optimized_prompt if optimized_prompt else None  # 应用优化提示词
+                    )
+                    
+                    if not article_result:
+                        raise Exception("AI 生成文章失败")
+                    
+                    # 解析文章结构
+                    article_title = article_result.get("title", f"{final_topic}的深度解析")
+                    article_content = article_result.get("content", "")
+                    article_tags = article_result.get("tags", [])
+                    
+                    logger.info(f"✅ [步骤2/7] 文章生成成功！标题: {article_title}")
+                    
+                    # ========== 步骤 3: 合规审查（必须，100%执行）==========
+                    logger.info(f"🔍 [步骤3/7] 正在进行合规审查（强制执行）...")
+                    compliance_result = check_content_compliance(article_title, article_content, "toutiao")
+                    if not compliance_result["passed"]:
+                        retry_count += 1
+                        last_error = f"合规审查失败：{compliance_result['error']}"
+                        logger.error(f"❌ {last_error}")
+                        logger.error(f"   ⛔ 文章包含违禁内容，将在 {MAX_RETRY_COUNT - retry_count} 次重试后重新生成")
+                        continue  # 继续下一次循环，重新生成文章
+                    
+                    logger.info(f"✅ [步骤3/7] 合规审查通过")
+                
+                    # ========== 步骤 4: 爆款潜力检测（热点话题强制事实核查）==========
+                    logger.info(f"🔥 [步骤4/7] 进行爆款潜力检测...")
+                    from app.services.analytics.viral_potential_checker import get_viral_checker
+                    
+                    viral_checker = get_viral_checker()
+                    is_hot_topic = final_topic and ("热搜" in final_topic or "热点" in final_topic)
+                    
+                    viral_result = viral_checker.check_viral_potential(
+                        title=article_title,
+                        content=article_content,
+                        platform="toutiao",
+                        topic=final_topic,
+                        is_hot_topic=is_hot_topic
+                    )
+                    
+                    logger.info(f"📊 爆款潜力评分: {viral_result['viral_score']}分 ({viral_result['level']})")
+                    
+                    # 记录优势点
+                    for strength in viral_result.get('strengths', []):
+                        logger.info(f"   ✅ {strength}")
+                    
+                    # 记录待优化点
+                    for weakness in viral_result.get('weaknesses', []):
+                        logger.warning(f"   ⚠️  {weakness}")
+                    
+                    # 热点话题事实核查
+                    if is_hot_topic and 'fact_check' in viral_result:
+                        fact_check = viral_result['fact_check']
+                        if not fact_check['passed']:
+                            retry_count += 1
+                            last_error = f"热点话题事实核查失败：{fact_check['issues'][0] if fact_check['issues'] else '存在事实风险'}"
+                            logger.error(f"❌ {last_error}")
+                            for issue in fact_check.get('issues', []):
+                                logger.error(f"   {issue}")
+                            for warning in fact_check.get('warnings', []):
+                                logger.warning(f"   {warning}")
+                            logger.error(f"   ⛔ 将在 {MAX_RETRY_COUNT - retry_count} 次重试后重新生成")
+                            continue  # 继续下一次循环，重新生成文章
+                        else:
+                            logger.info(f"✅ 热点话题事实核查通过")
+                    
+                    # 如果爆款潜力过低，给出警告但允许发布
+                    if viral_result['viral_score'] < 40:
+                        logger.warning(f"⚠️  爆款潜力较低 ({viral_result['viral_score']}分)，建议优化后再发布")
+                        for suggestion in viral_result.get('suggestions', []):
+                            logger.warning(f"   💡 {suggestion}")
+                    
+                    logger.info(f"✅ [步骤4/7] 爆款潜力检测完成")
+                    
+                    # ========== 步骤 5: 生成文章配图 ==========
+                    final_article_images = []
+                    
+                    if auto_generate_images:
+                        # AI自动生成配图
+                        logger.info(f"🖼️  [步骤5/7] 开始AI生成文章配图...")
+                        from app.services.content.article_image_generator import ArticleImageGenerator
+                        image_generator = ArticleImageGenerator(use_ai=True, db=db)  # 强制使用AI生成，传递db
+                        article_images_info = await image_generator.generate_images_for_article(
+                            title=article_title,
+                            content=article_content,
+                            num_images=num_images,
+                            category=category,
+                            enable_ab_test=True  # 启用A/B测试
+                        )
+                        final_article_images = [img["file_path"] for img in article_images_info]
+                        if final_article_images:
+                            logger.info(f"✅ [步骤5/7] AI文章配图生成成功，共 {len(final_article_images)} 张")
+                            for i, img_path in enumerate(final_article_images, 1):
+                                logger.info(f"   配图{i}: {img_path}")
+                        else:
+                            logger.warning(f"⚠️  AI文章配图生成失败")
+                    elif article_images:
+                        # 使用用户上传的配图
+                        logger.info(f"📁 [步骤5/7] 使用用户上传的文章配图: {len(article_images)} 张")
+                        final_article_images = article_images
+                    else:
+                        logger.info(f"ℹ️  [步骤5/7] 未配置文章配图，将不上传配图")
+                    
+                    # ========== 步骤 6: 解析作品声明 ==========
+                    if declarations and isinstance(declarations, str):
+                        try:
+                            declarations_list = global_json.loads(declarations)
+                            logger.info(f"✅ 作品声明解析成功: {declarations_list}")
+                        except Exception as e:
+                            logger.warning(f"⚠️  作品声明解析失败: {e}，使用默认值")
+                            declarations_list = [declaration_type]
+                    else:
+                        declarations_list = [declaration_type]
+                    
+                    # ========== 步骤 7: 自动发布 ==========
+                    logger.info(f"[步骤7/7] 开始发布文章...")
+                    publish_result = await publisher.publish_article(
+                        title=article_title,
+                        content=article_content,
+                        category=category,
+                        tags=article_tags,
+                        cover_image_path=cover_image_path,
+                        auto_generate_cover=auto_generate_cover,
+                        cover_style=cover_style,
+                        use_template=use_template,
+                        declaration_type=declaration_type,
+                        declarations=declarations_list,  # ✅ 传递解析后的作品声明列表
+                        article_images=final_article_images,  # 传入最终的文章配图（AI生成或用户上传）
+                        image_suggestions=article_result.get("image_suggestions"),  # ★★★ 传递智能图片位置建议
+                        account_id=account_id  # ★★★ 传递账号ID用于获取进化配置
+                    )
+                    
+                    if publish_result["status"] not in ["success", "pending"]:
+                        retry_count += 1
+                        last_error = publish_result.get("error", "发布失败")
+                        logger.error(f"❌ 发布失败: {last_error}")
+                        logger.error(f"   ⛔ 将在 {MAX_RETRY_COUNT - retry_count} 次重试后重新生成并发布")
+                        continue  # 继续下一次循环，重新生成并发布
+                    
+                    logger.info(f"✅ [步骤7/7] 文章发布成功！")
+                    publish_success = True  # 标记发布成功，退出循环
+                    
+                    # ========== 保存发布记录 ==========
+                    logger.info(f"💾 保存发布记录...")
+                    
+                    # 保存内容任务
+                    content_task = ContentTask(
+                        task_id=str(uuid.uuid4()),
+                        original_topic=final_topic,
+                        target_platform=PlatformEnum.TOUTIAO,
+                        article_title=article_title,
+                        article_content=article_content,
+                        article_category=category,
+                        tags=article_tags,
+                        status="completed"
+                    )
+                    db.add(content_task)
+                    db.flush()  # 获取 content_task.id
+                    
+                    # ✅ 关键修复：保存发布记录（PublishRecord）
+                    publish_record = PublishRecord(
+                        account_id=account_id,
+                        content_task_id=content_task.id,
+                        publish_status="published",  # ✅ 直接使用字符串，不使用枚举
+                        publish_time=datetime.now(),
+                        platform_url=publish_result.get("article_url", ""),
+                        error_message=None
+                    )
+                    db.add(publish_record)
+                    db.commit()
+                    
+                    logger.info(f"✅ 发布记录保存成功！ID: {publish_record.id}")
+                    
+                    # 发布成功，返回结果
+                    return {
+                        "status": "success",
+                        "message": f"文章发布成功！（重试次数: {retry_count}）",
+                        "article_title": article_title,
+                        "article_content_length": len(article_content),
+                        "tags": article_tags,
+                        "category": category,
+                        "retry_count": retry_count
+                    }
+                    
                 except Exception as e:
-                    logger.warning(f"⚠️  作品声明解析失败: {e}，使用默认值")
-                    declarations_list = [declaration_type]
-            else:
-                declarations_list = [declaration_type]
+                    retry_count += 1
+                    last_error = str(e)
+                    logger.error(f"❌ 处理异常: {last_error}", exc_info=True)
+                    logger.error(f"   ⛔ 将在 {MAX_RETRY_COUNT - retry_count} 次重试后重新尝试")
+                    if retry_count >= MAX_RETRY_COUNT:
+                        raise  # 如果达到最大重试次数，抛出异常
+                    continue  # 否则继续重试
             
-            # ========== 步骤 3: 自动发布 ==========
-            logger.info(f"[步骤3/4] 开始发布文章...")
-            publish_result = await publisher.publish_article(
-                title=article_title,
-                content=article_content,
-                category=category,
-                tags=article_tags,
-                cover_image_path=cover_image_path,
-                auto_generate_cover=auto_generate_cover,
-                cover_style=cover_style,
-                use_template=use_template,
-                declaration_type=declaration_type,
-                declarations=declarations_list,  # ✅ 传递解析后的作品声明列表
-                article_images=final_article_images  # 传入最终的文章配图（AI生成或用户上传）
-            )
-            
-            if publish_result["status"] not in ["success", "pending"]:
+            # 如果循环结束仍未成功
+            if not publish_success:
                 return {
                     "status": "failed",
                     "step": "publish",
-                    "error": publish_result.get("error", "发布失败")
+                    "error": f"经过 {MAX_RETRY_COUNT} 次尝试后仍无法发布成功。最后错误: {last_error}",
+                    "retry_count": retry_count
                 }
-            
-            logger.info(f"✅ [步骤3/4] 文章发布成功！")
-            
-            # ========== 步骤 4: 保存记录 ==========
-            logger.info(f"[步骤4/4] 保存发布记录...")
-            
-            # 保存内容任务
-            content_task = ContentTask(
-                task_id=str(uuid.uuid4()),
-                original_topic=topic,
-                target_platform=PlatformEnum.TOUTIAO,
-                article_title=article_title,
-                article_content=article_content,
-                article_category=category,
-                tags=article_tags,
-                status="completed"
-            )
-            db.add(content_task)
-            db.flush()  # 获取 content_task.id
-            
-            # ✅ 关键修复：保存发布记录（PublishRecord）
-            publish_record = PublishRecord(
-                account_id=account_id,
-                content_task_id=content_task.id,
-                publish_status="published",  # ✅ 直接使用字符串，不使用枚举
-                publish_time=datetime.now(),
-                platform_url=publish_result.get("article_url", ""),
-                error_message=None
-            )
-            db.add(publish_record)
-            db.commit()
-            
-            logger.info(f"✅ [步骤4/4] 发布记录保存成功！ID: {publish_record.id}")
-            
-            return {
-                "status": "success",
-                "message": "文章发布成功！",
-                "article_title": article_title,
-                "article_content_length": len(article_content),
-                "tags": article_tags,
-                "category": category
-            }
             
         except Exception as e:
             logger.error(f"自动发布失败: {str(e)}", exc_info=True)
@@ -1717,26 +1831,40 @@ def check_content_compliance(title: str, content: str, platform: str) -> Dict[st
     Returns:
         检查结果
     """
+    logger.info(f"🔍 开始合规审查...")
+    logger.info(f"   平台: {platform}")
+    logger.info(f"   标题长度: {len(title)}字")
+    logger.info(f"   内容长度: {len(content)}字")
+    
     # 检查标题
+    logger.info(f"   📝 检查标题...")
     title_check = check_compliance(title, platform)
     if not title_check["passed"]:
+        logger.warning(f"   ❌ 标题包含违禁词: {', '.join(title_check['violations'])}")
         return {
             "passed": False,
             "field": "title",
             "violations": title_check["violations"],
             "error": f"标题包含违禁词: {', '.join(title_check['violations'])}"
         }
+    logger.info(f"   ✅ 标题检查通过")
     
     # 检查内容
+    logger.info(f"   📄 检查正文...")
     content_check = check_compliance(content, platform)
     if not content_check["passed"]:
+        violations_preview = content_check['violations'][:5]
+        logger.warning(f"   ❌ 内容包含{len(content_check['violations'])}处违禁词")
+        logger.warning(f"   示例: {', '.join(violations_preview)}")
         return {
             "passed": False,
             "field": "content",
             "violations": content_check["violations"][:5],  # 只显示前5个
             "error": f"内容包含{len(content_check['violations'])}处违禁词"
         }
+    logger.info(f"   ✅ 正文检查通过")
     
+    logger.info(f"✅ 合规审查完成 - 全部通过")
     return {"passed": True}
 
 
@@ -3045,38 +3173,37 @@ def create_llm_config(
 @router.put("/llm-configs/{config_id}", summary="更新LLM配置")
 def update_llm_config(
     config_id: int,
-    name: str = None,
-    api_key: str = None,
-    base_url: str = None,
-    model_name: str = None,
-    image_model_name: str = None,
-    timeout: int = None,
-    max_tokens: int = None,
-    temperature: float = None,
-    extra_params: dict = None,
-    is_default: bool = None,
-    is_active: bool = None,
-    priority: int = None,
-    description: str = None,
+    request: dict = None,
     db: Session = Depends(get_db)
 ):
     """更新LLM配置"""
+    from app.models import LLMConfig
     from app.services.system.config_service import LLMConfigService
+    
+    if not request:
+        raise HTTPException(status_code=400, detail="请求体不能为空")
     
     llm_service = LLMConfigService(db)
     
     # 如果设置为默认，取消同类型的其他默认配置
-    if is_default:
-        config = db.query(db.models.LLMConfig).filter(db.models.LLMConfig.id == config_id).first()
+    if request.get('is_default'):
+        config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
         if config:
             existing_default = llm_service.get_default_llm_config(config.function_type.value)
             if existing_default and existing_default.id != config_id:
                 llm_service.update_llm_config(existing_default.id, is_default=False)
     
+    # 构建更新数据
     update_data = {}
-    for key, value in locals().items():
-        if key not in ['config_id', 'db', 'llm_service', 'existing_default'] and value is not None:
-            update_data[key] = value
+    allowed_fields = [
+        'name', 'api_key', 'base_url', 'model_name', 'image_model_name',
+        'timeout', 'max_tokens', 'temperature', 'extra_params',
+        'is_default', 'is_active', 'priority', 'description'
+    ]
+    
+    for key in allowed_fields:
+        if key in request:
+            update_data[key] = request[key]
     
     config = llm_service.update_llm_config(config_id, **update_data)
     if not config:
@@ -3137,6 +3264,36 @@ def test_llm_config(config_id: int, db: Session = Depends(get_db)):
         "error": result.get("error"),
         "response": result.get("response"),
         "elapsed_time": result.get("elapsed_time")
+    }
+
+
+@router.patch("/llm-configs/{config_id}/toggle-active", summary="切换LLM配置激活状态")
+def toggle_llm_config_active(config_id: int, db: Session = Depends(get_db)):
+    """
+    切换LLM配置的激活状态（启用/禁用）
+    
+    返回更新后的配置信息
+    """
+    from app.models import LLMConfig
+    from app.services.system.config_service import LLMConfigService
+    
+    config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="配置不存在")
+    
+    llm_service = LLMConfigService(db)
+    
+    # 切换激活状态
+    new_status = not config.is_active
+    updated_config = llm_service.update_llm_config(config_id, is_active=new_status)
+    
+    return {
+        "status": "success",
+        "message": f"配置已{'启用' if new_status else '禁用'}",
+        "data": {
+            "id": updated_config.id,
+            "is_active": updated_config.is_active
+        }
     }
 
 
@@ -3214,4 +3371,821 @@ async def get_api_usage(provider: str, db: Session = Depends(get_db)):
         "provider": provider,
         "config_name": config.name,
         **result
+    }
+
+
+# ==================== 番茄小说相关接口 ====================
+
+@router.post("/accounts/fanqie/login", summary="番茄账号登录")
+def fanqie_login(
+    account_id: int = None,
+    username: str = None,
+    password: str = None,
+    db: Session = Depends(get_db)
+):
+    """番茄作家后台登录，保存Cookie"""
+    from app.services.publish.fanqie_publisher import FanqiePublisher
+    
+    # 如果提供了account_id，使用数据库中的账号
+    if account_id:
+        account = db.query(Account).filter(Account.id == account_id).first()
+        if not account:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        
+        if not account.password and not password:
+            raise HTTPException(status_code=400, detail="请提供密码或在数据库中保存密码")
+        
+        login_password = password or account.password
+        login_username = account.username
+    elif username and password:
+        # 查找或创建账号
+        account = db.query(Account).filter(
+            Account.username == username,
+            Account.platform == PlatformEnum.FANQIE
+        ).first()
+        
+        if not account:
+            # 账号不存在，创建新账号
+            account = Account(
+                platform=PlatformEnum.FANQIE,
+                username=username,
+                password=password,
+                status=AccountStatusEnum.ACTIVE
+            )
+            db.add(account)
+            db.commit()
+            db.refresh(account)
+            logger.info(f"✅ 番茄账号创建成功，ID: {account.id}")
+        else:
+            # 账号已存在，更新密码
+            account.password = password
+            account.status = AccountStatusEnum.ACTIVE
+            db.commit()
+            logger.info(f"✅ 番茄账号已存在，更新密码，ID: {account.id}")
+        
+        login_password = password
+        login_username = username
+        account_id = account.id
+    else:
+        raise HTTPException(status_code=400, detail="请提供account_id或username+password")
+    
+    async def login_process():
+        publisher = FanqiePublisher(account_id=account_id)
+        try:
+            await publisher.initialize_browser(use_cdp=True, cdp_port=9222)
+            
+            # 这里需要实现实际的登录逻辑
+            # 由于番茄可能需要手动登录，先返回提示
+            logger.info(f"请在浏览器中完成番茄账号登录...")
+            
+            return {
+                "status": "success",
+                "message": "请在打开的浏览器中完成登录，系统将自动保存Cookie",
+                "account_id": account_id
+            }
+        finally:
+            await publisher.close()
+    
+    return run_async_task(login_process())
+
+
+@router.post("/content/fanqie/create_novel", summary="创建番茄小说")
+def create_fanqie_novel(
+    account_id: int,
+    title: str,
+    category: str,
+    tags: list = None,
+    introduction: str = None,
+    cover_image_path: str = None,
+    db: Session = Depends(get_db)
+):
+    """创建新书"""
+    from app.services.publish.fanqie_publisher import FanqiePublisher
+    
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    
+    if tags is None:
+        tags = []
+    
+    async def create_process():
+        publisher = FanqiePublisher(account_id=account_id)
+        try:
+            await publisher.initialize_browser(use_cdp=True, cdp_port=9222)
+            
+            # 尝试使用Cookie登录
+            if account.writer_cookies:
+                await publisher.login_with_cookies(account.writer_cookies)
+            
+            result = await publisher.create_novel(
+                title=title,
+                category=category,
+                tags=tags,
+                introduction=introduction or f"{title}的精彩故事",
+                cover_image_path=cover_image_path
+            )
+            
+            if result['status'] == 'success':
+                # 保存到数据库
+                novel = Novel(
+                    account_id=account_id,
+                    title=title,
+                    category=category,
+                    tags=tags,
+                    introduction=introduction,
+                    cover_image_path=cover_image_path,
+                    novel_id=result.get('novel_id'),
+                    status='published'
+                )
+                db.add(novel)
+                db.commit()
+                db.refresh(novel)
+                
+                # 更新账号的小说ID
+                account.novel_id = result.get('novel_id')
+                account.novel_title = title
+                db.commit()
+                
+                logger.info(f"✅ 小说创建成功，ID: {novel.id}")
+                
+                return {
+                    "status": "success",
+                    "message": "小说创建成功",
+                    "novel_id": novel.id,
+                    "platform_novel_id": result.get('novel_id')
+                }
+            else:
+                raise Exception(result.get('error', '创建失败'))
+                
+        finally:
+            await publisher.close()
+    
+    return run_async_task(create_process())
+
+
+@router.post("/content/fanqie/publish_chapter", summary="发布番茄章节")
+def publish_fanqie_chapter(
+    novel_id: int,
+    chapter_number: int,
+    title: str,
+    content: str,
+    scheduled_time: str = None,
+    db: Session = Depends(get_db)
+):
+    """发布章节（支持定时发布）"""
+    from app.services.publish.fanqie_publisher import FanqiePublisher
+    
+    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not novel:
+        raise HTTPException(status_code=404, detail="小说不存在")
+    
+    account_id = novel.account_id
+    
+    async def publish_process():
+        publisher = FanqiePublisher(account_id=account_id)
+        try:
+            await publisher.initialize_browser(use_cdp=True, cdp_port=9222)
+            
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if account and account.writer_cookies:
+                await publisher.login_with_cookies(account.writer_cookies)
+            
+            result = await publisher.publish_chapter(
+                novel_id=novel.novel_id or str(novel_id),
+                chapter_number=chapter_number,
+                title=title,
+                content=content,
+                scheduled_time=scheduled_time
+            )
+            
+            if result['status'] == 'success':
+                # 保存到数据库
+                chapter = Chapter(
+                    novel_id=novel_id,
+                    chapter_number=chapter_number,
+                    title=title,
+                    content=content,
+                    word_count=len(content),
+                    status='published' if not scheduled_time else 'scheduled',
+                    scheduled_time=datetime.fromisoformat(scheduled_time) if scheduled_time else None,
+                    published_time=datetime.utcnow() if not scheduled_time else None,
+                    platform_chapter_id=result.get('chapter_id')
+                )
+                db.add(chapter)
+                
+                # 更新小说统计
+                novel.total_chapters += 1
+                novel.total_words += len(content)
+                
+                # 更新账号统计
+                account = db.query(Account).filter(Account.id == account_id).first()
+                if account:
+                    account.total_chapters += 1
+                    account.total_words += len(content)
+                    account.last_update_date = datetime.utcnow()
+                    account.consecutive_days += 1
+                
+                db.commit()
+                
+                logger.info(f"✅ 章节发布成功，ID: {chapter.id}")
+                
+                return {
+                    "status": "success",
+                    "message": "章节发布成功",
+                    "chapter_id": chapter.id,
+                    "chapter_number": chapter_number
+                }
+            else:
+                raise Exception(result.get('error', '发布失败'))
+                
+        finally:
+            await publisher.close()
+    
+    return run_async_task(publish_process())
+
+
+@router.post("/content/fanqie/auto_publish", summary="番茄全自动发布")
+def auto_publish_fanqie_chapter(
+    novel_id: int,
+    topic: str = None,
+    use_ai_content: bool = True,
+    db: Session = Depends(get_db)
+):
+    """全自动发布流程：AI生成章节内容并自动发布"""
+    from app.services.publish.fanqie_publisher import FanqiePublisher
+    from app.services.content.copywriting_generator import CopywritingGenerator
+    
+    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not novel:
+        raise HTTPException(status_code=404, detail="小说不存在")
+    
+    account_id = novel.account_id
+    
+    # 获取下一章序号
+    last_chapter = db.query(Chapter).filter(
+        Chapter.novel_id == novel_id
+    ).order_by(Chapter.chapter_number.desc()).first()
+    
+    next_chapter_number = (last_chapter.chapter_number + 1) if last_chapter else 1
+    
+    # AI生成章节内容
+    if use_ai_content:
+        generator = CopywritingGenerator()
+        
+        # 根据小说类型选择合适的prompt
+        prompt_template = f"""
+        你是番茄小说平台的顶级爽文作家。
+        
+        小说类型：{novel.category}
+        小说标题：{novel.title}
+        章节序号：第{next_chapter_number}章
+        本章主题：{topic or '继续故事情节'}
+        
+        要求：
+        1. 字数2000-2500字
+        2. 节奏快，爽点密集
+        3. 章节结尾留悬念
+        4. 适合手机阅读，段落简短
+        
+        请生成章节内容：
+        """
+        
+        ai_result = generator.generate_script("toutiao", prompt_template)
+        
+        if ai_result:
+            chapter_title = ai_result.get('title', f"第{next_chapter_number}章")
+            chapter_content = ai_result.get('content', '')
+        else:
+            chapter_title = f"第{next_chapter_number}章"
+            chapter_content = f"这是第{next_chapter_number}章的内容..."
+    else:
+        chapter_title = f"第{next_chapter_number}章"
+        chapter_content = topic or "请输入章节内容"
+    
+    async def auto_publish_process():
+        publisher = FanqiePublisher(account_id=account_id)
+        try:
+            await publisher.initialize_browser(use_cdp=True, cdp_port=9222)
+            
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if account and account.writer_cookies:
+                await publisher.login_with_cookies(account.writer_cookies)
+            
+            result = await publisher.publish_chapter(
+                novel_id=novel.novel_id or str(novel_id),
+                chapter_number=next_chapter_number,
+                title=chapter_title,
+                content=chapter_content
+            )
+            
+            if result['status'] == 'success':
+                chapter = Chapter(
+                    novel_id=novel_id,
+                    chapter_number=next_chapter_number,
+                    title=chapter_title,
+                    content=chapter_content,
+                    word_count=len(chapter_content),
+                    status='published',
+                    published_time=datetime.utcnow(),
+                    platform_chapter_id=result.get('chapter_id'),
+                    ai_generated_ratio=1.0 if use_ai_content else 0.0
+                )
+                db.add(chapter)
+                
+                novel.total_chapters += 1
+                novel.total_words += len(chapter_content)
+                
+                account = db.query(Account).filter(Account.id == account_id).first()
+                if account:
+                    account.total_chapters += 1
+                    account.total_words += len(chapter_content)
+                    account.last_update_date = datetime.utcnow()
+                    account.consecutive_days += 1
+                
+                db.commit()
+                
+                return {
+                    "status": "success",
+                    "message": "全自动发布成功",
+                    "chapter_id": chapter.id,
+                    "chapter_number": next_chapter_number,
+                    "title": chapter_title,
+                    "word_count": len(chapter_content)
+                }
+            else:
+                raise Exception(result.get('error', '发布失败'))
+                
+        finally:
+            await publisher.close()
+    
+    return run_async_task(auto_publish_process())
+
+
+@router.get("/content/fanqie/analytics/{novel_id}", summary="获取番茄数据分析")
+def get_fanqie_analytics(
+    novel_id: int,
+    days: int = 7,
+    db: Session = Depends(get_db)
+):
+    """获取小说数据分析"""
+    from app.services.publish.fanqie_publisher import FanqiePublisher
+    
+    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not novel:
+        raise HTTPException(status_code=404, detail="小说不存在")
+    
+    account_id = novel.account_id
+    
+    async def fetch_analytics():
+        publisher = FanqiePublisher(account_id=account_id)
+        try:
+            await publisher.initialize_browser(use_cdp=True, cdp_port=9222)
+            
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if account and account.writer_cookies:
+                await publisher.login_with_cookies(account.writer_cookies)
+            
+            result = await publisher.fetch_analytics(
+                novel_id=novel.novel_id or str(novel_id),
+                days=days
+            )
+            
+            if result['status'] == 'success':
+                # 保存到数据库
+                from datetime import timedelta
+                for i in range(days):
+                    stat_date = datetime.utcnow() - timedelta(days=i)
+                    data = result['data']
+                    
+                    analytics_record = FanqieAnalytics(
+                        novel_id=novel_id,
+                        stat_date=stat_date,
+                        daily_reads=data.get("daily_reads", 0),
+                        new_followers=data.get("new_followers", 0),
+                        new_favorites=data.get("new_favorites", 0),
+                        comments_count=data.get("comments_count", 0),
+                        daily_ad_revenue=data.get("ad_revenue", 0.0),
+                        completion_rate=data.get("completion_rate", 0.0),
+                        retention_rate_day1=data.get("retention_rate_day1", 0.0),
+                        retention_rate_day7=data.get("retention_rate_day7", 0.0),
+                    )
+                    db.add(analytics_record)
+                
+                novel.total_reads = data.get("total_reads", novel.total_reads)
+                novel.total_favorites = data.get("total_favorites", novel.total_favorites)
+                novel.avg_rating = data.get("avg_rating", novel.avg_rating)
+                
+                db.commit()
+                
+                return {
+                    "status": "success",
+                    "message": "数据抓取成功",
+                    "data": result['data']
+                }
+            else:
+                raise Exception(result.get('error', '数据抓取失败'))
+                
+        finally:
+            await publisher.close()
+    
+    return run_async_task(fetch_analytics())
+
+
+@router.post("/content/fanqie/generate_cover", summary="生成番茄小说封面")
+def generate_fanqie_cover(
+    novel_id: int,
+    use_ai: bool = True,
+    style: str = "realistic",
+    template_id: str = "default",
+    db: Session = Depends(get_db)
+):
+    """生成小说封面（AI或模板）"""
+    from app.services.publish.fanqie_cover_generator import FanqieCoverGenerator
+    from app.core.config import settings
+    
+    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not novel:
+        raise HTTPException(status_code=404, detail="小说不存在")
+    
+    generator = FanqieCoverGenerator()
+    
+    if use_ai:
+        # AI生成封面
+        api_key = settings.SILICONFLOW_API_KEY or settings.OPENAI_API_KEY
+        if not api_key:
+            raise HTTPException(status_code=400, detail="未配置API密钥")
+        
+        async def generate_ai():
+            result = await generator.generate_ai_cover(
+                novel_title=novel.title,
+                category=novel.category or "都市",
+                tags=novel.tags or [],
+                api_key=api_key,
+                style=style
+            )
+            
+            if result['status'] == 'success':
+                novel.cover_image_path = result['image_url']
+                db.commit()
+                
+                return {
+                    "status": "success",
+                    "message": "AI封面生成成功",
+                    "image_url": result['image_url'],
+                    "prompt": result.get('prompt')
+                }
+            else:
+                raise Exception(result.get('error', 'AI封面生成失败'))
+        
+        return run_async_task(generate_ai())
+    else:
+        # 模板生成封面
+        account = db.query(Account).filter(Account.id == novel.account_id).first()
+        author_name = account.username if account else "未知作者"
+        
+        async def generate_template():
+            result = await generator.generate_template_cover(
+                novel_title=novel.title,
+                author_name=author_name,
+                template_id=template_id
+            )
+            
+            if result['status'] == 'success':
+                novel.cover_image_path = result['filepath']
+                db.commit()
+                
+                return {
+                    "status": "success",
+                    "message": "模板封面生成成功",
+                    "filepath": result['filepath'],
+                    "template_id": template_id
+                }
+            else:
+                raise Exception(result.get('error', '模板封面生成失败'))
+        
+        return run_async_task(generate_template())
+
+
+@router.post("/content/fanqie/batch_generate", summary="批量生成章节")
+def batch_generate_chapters(
+    novel_id: int,
+    chapter_count: int = 5,
+    start_chapter: int = None,
+    db: Session = Depends(get_db)
+):
+    """批量生成章节内容（不发布，仅保存到草稿）"""
+    from app.services.content.copywriting_generator import CopywritingGenerator
+    
+    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not novel:
+        raise HTTPException(status_code=404, detail="小说不存在")
+    
+    # 确定起始章节号
+    if start_chapter is None:
+        last_chapter = db.query(Chapter).filter(
+            Chapter.novel_id == novel_id
+        ).order_by(Chapter.chapter_number.desc()).first()
+        start_chapter = (last_chapter.chapter_number + 1) if last_chapter else 1
+    
+    generator = CopywritingGenerator()
+    generated_chapters = []
+    
+    for i in range(chapter_count):
+        chapter_number = start_chapter + i
+        
+        prompt_template = f"""
+        你是番茄小说平台的顶级爽文作家。
+        
+        小说类型：{novel.category}
+        小说标题：{novel.title}
+        章节序号：第{chapter_number}章
+        
+        要求：
+        1. 字数2000-2500字
+        2. 节奏快，爽点密集
+        3. 章节结尾留悬念
+        4. 适合手机阅读，段落简短
+        
+        请生成章节内容：
+        """
+        
+        ai_result = generator.generate_script("toutiao", prompt_template)
+        
+        if ai_result:
+            chapter_title = ai_result.get('title', f"第{chapter_number}章")
+            chapter_content = ai_result.get('content', '')
+        else:
+            chapter_title = f"第{chapter_number}章"
+            chapter_content = f"这是第{chapter_number}章的内容..."
+        
+        # 保存为草稿
+        chapter = Chapter(
+            novel_id=novel_id,
+            chapter_number=chapter_number,
+            title=chapter_title,
+            content=chapter_content,
+            word_count=len(chapter_content),
+            status='draft',
+            ai_generated_ratio=1.0
+        )
+        db.add(chapter)
+        
+        generated_chapters.append({
+            "chapter_number": chapter_number,
+            "title": chapter_title,
+            "word_count": len(chapter_content)
+        })
+    
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"批量生成{chapter_count}章完成",
+        "chapters": generated_chapters
+    }
+
+
+@router.get("/content/fanqie/warnings", summary="获取断更预警")
+def get_consecutive_warnings(db: Session = Depends(get_db)):
+    """获取所有断更预警信息"""
+    from datetime import timedelta
+    
+    accounts = db.query(Account).filter(
+        Account.platform == PlatformEnum.FANQIE
+    ).all()
+    
+    warnings = []
+    
+    for account in accounts:
+        novels = db.query(Novel).filter(
+            Novel.account_id == account.id,
+            Novel.status == "serializing"
+        ).all()
+        
+        for novel in novels:
+            last_chapter = db.query(Chapter).filter(
+                Chapter.novel_id == novel.id,
+                Chapter.status == "published"
+            ).order_by(Chapter.published_time.desc()).first()
+            
+            if last_chapter and last_chapter.published_time:
+                days_since_update = (datetime.utcnow() - last_chapter.published_time).days
+                
+                if days_since_update >= 2:
+                    warnings.append({
+                        "account_id": account.id,
+                        "account_name": account.username,
+                        "novel_id": novel.id,
+                        "novel_title": novel.title,
+                        "days_since_update": days_since_update,
+                        "last_update": last_chapter.published_time.isoformat(),
+                        "severity": "critical" if days_since_update >= 5 else "warning"
+                    })
+    
+    return {
+        "status": "success",
+        "warning_count": len(warnings),
+        "warnings": warnings
+    }
+
+
+@router.get("/content/fanqie/bonus_qualification", summary="检查全勤奖资格")
+def check_bonus_qualification(db: Session = Depends(get_db)):
+    """检查所有账号的全勤奖资格"""
+    from datetime import timedelta
+    
+    accounts = db.query(Account).filter(
+        Account.platform == PlatformEnum.FANQIE
+    ).all()
+    
+    qualified_accounts = []
+    
+    for account in accounts:
+        novels = db.query(Novel).filter(
+            Novel.account_id == account.id,
+            Novel.status == "serializing"
+        ).all()
+        
+        for novel in novels:
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            
+            chapters = db.query(Chapter).filter(
+                Chapter.novel_id == novel.id,
+                Chapter.status == "published",
+                Chapter.published_time >= thirty_days_ago
+            ).all()
+            
+            daily_words = {}
+            for chapter in chapters:
+                day = chapter.published_time.date()
+                if day not in daily_words:
+                    daily_words[day] = 0
+                daily_words[day] += chapter.word_count
+            
+            consecutive_days = 0
+            qualified = True
+            
+            for i in range(30):
+                check_date = (datetime.utcnow() - timedelta(days=i)).date()
+                words = daily_words.get(check_date, 0)
+                
+                if words >= 4000:
+                    consecutive_days += 1
+                else:
+                    qualified = False
+                    break
+            
+            if qualified and consecutive_days >= 30:
+                account.qualification_for_bonus = True
+                qualified_accounts.append({
+                    "account_id": account.id,
+                    "account_name": account.username,
+                    "novel_id": novel.id,
+                    "novel_title": novel.title,
+                    "consecutive_days": consecutive_days
+                })
+            else:
+                account.qualification_for_bonus = False
+                account.consecutive_days = consecutive_days
+    
+    db.commit()
+    
+    return {
+        "status": "success",
+        "qualified_count": len(qualified_accounts),
+        "qualified_accounts": qualified_accounts
+    }
+
+
+@router.get("/content/fanqie/novels/{account_id}", summary="获取账号下的小说列表")
+def get_account_novels(
+    account_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取指定账号下的所有小说"""
+    novels = db.query(Novel).filter(Novel.account_id == account_id).all()
+    
+    novels_data = []
+    for novel in novels:
+        novels_data.append({
+            "id": novel.id,
+            "title": novel.title,
+            "category": novel.category,
+            "status": novel.status,
+            "total_chapters": novel.total_chapters,
+            "total_words": novel.total_words,
+            "total_reads": novel.total_reads,
+            "created_at": novel.created_at.isoformat() if novel.created_at else None
+        })
+    
+    return {
+        "status": "success",
+        "data": novels_data
+    }
+
+
+@router.get("/content/fanqie/chapters/{novel_id}", summary="获取小说章节列表")
+def get_novel_chapters(
+    novel_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """获取指定小说的章节列表"""
+    query = db.query(Chapter).filter(Chapter.novel_id == novel_id)
+    
+    total = query.count()
+    skip = (page - 1) * page_size
+    chapters = query.order_by(Chapter.chapter_number.asc()).offset(skip).limit(page_size).all()
+    
+    chapters_data = []
+    for chapter in chapters:
+        chapters_data.append({
+            "id": chapter.id,
+            "chapter_number": chapter.chapter_number,
+            "title": chapter.title,
+            "word_count": chapter.word_count,
+            "status": chapter.status,
+            "published_time": chapter.published_time.isoformat() if chapter.published_time else None,
+            "read_count": chapter.read_count,
+            "completion_rate": chapter.completion_rate
+        })
+    
+    return {
+        "status": "success",
+        "data": {
+            "items": chapters_data,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    }
+
+# ==================== 头条任务 API ====================
+@router.post("/tasks/toutiao/auto_publish", summary="异步发布头条文章")
+def trigger_auto_publish_toutiao(article_id: int):
+    """
+    触发异步发布头条文章任务
+    
+    - **article_id**: 文章ID
+    """
+    task = auto_publish_toutiao_task.delay(article_id=article_id)
+    return {
+        "status": "success",
+        "message": "发布任务已提交",
+        "task_id": task.id,
+        "article_id": article_id
+    }
+
+@router.post("/tasks/toutiao/fetch_analytics", summary="异步抓取头条数据")
+def trigger_fetch_analytics(account_id: int, days: int = 7):
+    """
+    触发异步抓取头条数据分析任务
+    
+    - **account_id**: 账号ID
+    - **days**: 抓取天数（默认7天）
+    """
+    task = fetch_toutiao_analytics_task.delay(account_id=account_id, days=days)
+    return {
+        "status": "success",
+        "message": f"数据抓取任务已提交，将抓取最近{days}天的数据",
+        "task_id": task.id,
+        "account_id": account_id
+    }
+
+@router.post("/tasks/toutiao/check_health", summary="检查头条账号健康状态")
+def trigger_check_health():
+    """
+    触发头条账号健康状态检查任务
+    """
+    task = check_account_health_task.delay()
+    return {
+        "status": "success",
+        "message": "健康检查任务已提交",
+        "task_id": task.id
+    }
+
+@router.post("/tasks/toutiao/update_income", summary="更新头条收益统计")
+def trigger_update_income():
+    """
+    触发头条收益统计更新任务
+    """
+    task = update_income_stats_task.delay()
+    return {
+        "status": "success",
+        "message": "收益统计更新任务已提交",
+        "task_id": task.id
+    }
+
+@router.post("/tasks/toutiao/monitor_hot_topics", summary="监控热点话题")
+def trigger_monitor_hot_topics():
+    """
+    触发热点话题监控任务
+    """
+    task = hot_topic_monitor_task.delay()
+    return {
+        "status": "success",
+        "message": "热点监控任务已提交",
+        "task_id": task.id
     }

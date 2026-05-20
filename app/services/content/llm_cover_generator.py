@@ -36,27 +36,22 @@ class LLMCoverGenerator:
         os.makedirs(self.output_dir, exist_ok=True)
     
     def _initialize_client(self):
-        """初始化OpenAI客户端，优先使用数据库配置"""
-        # 尝试从数据库获取配置
+        """初始化OpenAI客户端，强制使用数据库配置"""
+        # ✅ 强制从数据库获取配置
         config = self._get_llm_config_from_db()
         
-        if config:
-            # 使用数据库配置
-            self.client = OpenAI(
-                api_key=config.api_key,
-                base_url=config.base_url,
-                timeout=float(config.timeout or 60)
-            )
-            self.model = config.model_name
-            logger.info(f"✅ LLM封面图生成器已初始化，使用数据库配置: {config.provider.value} - {config.name}")
-        else:
-            # 回退到配置文件
-            self._initialize_from_settings()
+        self.client = OpenAI(
+            api_key=config.api_key,
+            base_url=config.base_url,
+            timeout=float(config.timeout or 60)
+        )
+        self.model = config.model_name
+        logger.info(f"✅ LLM封面图生成器已初始化: {config.provider.value} - {config.name} ({config.model_name})")
     
     def _get_llm_config_from_db(self):
-        """从数据库获取LLM配置"""
+        """从数据库获取LLM配置(必须)"""
         if not self.db:
-            return None
+            raise ValueError("数据库会话未提供,无法获取LLM配置。请先在数据库中配置大模型。")
         
         try:
             from app.services.system.config_service import LLMConfigService
@@ -65,39 +60,26 @@ class LLMCoverGenerator:
             config = llm_service.get_default_llm_config("content_analysis")
             if not config:
                 config = llm_service.get_default_llm_config("copywriting")
+            
+            if not config:
+                raise ValueError(
+                    "数据库中未找到封面图生成的LLM配置。\n"
+                    "请前往【系统管理】→【LLM配置管理】添加配置:\n"
+                    "1. 选择提供商(siliconflow/modelscope/dashscope等)\n"
+                    "2. 功能类型选择【内容分析】或【文案生成】\n"
+                    "3. 填写API密钥、Base URL和模型名称\n"
+                    "4. 勾选【设为默认】\n"
+                    "5. 保存并测试"
+                )
+            
             return config
+        except ValueError:
+            raise
         except Exception as e:
-            logger.warning(f"从数据库获取LLM配置失败: {e}，将使用配置文件")
-            return None
+            logger.error(f"从数据库获取LLM配置失败: {e}")
+            raise ValueError(f"数据库查询失败: {str(e)}")
     
-    def _initialize_from_settings(self):
-        """从配置文件初始化（回退方案）"""
-        provider = settings.LLM_PROVIDER.lower()
-        
-        if provider == "siliconflow":
-            self.client = OpenAI(
-                api_key=settings.SILICONFLOW_API_KEY,
-                base_url=settings.SILICONFLOW_BASE_URL,
-                timeout=60.0  # ✅ 增加到60秒超时，适应硅基流动API响应速度
-            )
-            self.model = settings.SILICONFLOW_MODEL
-        elif provider == "modelscope":
-            self.client = OpenAI(
-                api_key=settings.MODELSCOPE_API_KEY,
-                base_url=settings.MODELSCOPE_BASE_URL
-            )
-            self.model = settings.MODELSCOPE_MODEL
-        elif provider == "deepseek":
-            self.client = OpenAI(
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url="https://api.deepseek.com/v1"
-            )
-            self.model = "deepseek-chat"
-        else:  # openai
-            self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            self.model = "gpt-3.5-turbo"
-        
-        logger.info(f"⚠️ LLM封面图生成器已初始化（使用配置文件），提供商: {provider}")
+
     
     def analyze_content_for_cover(self, title: str, content: str = "", category: str = "科技") -> Dict[str, Any]:
         """

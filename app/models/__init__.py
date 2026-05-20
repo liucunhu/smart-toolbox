@@ -11,6 +11,7 @@ class PlatformEnum(str, enum.Enum):
     BILIBILI = "bilibili"
     VIDEO_ACCOUNT = "video_account"  # 视频号
     TOUTIAO = "toutiao"  # 今日头条
+    FANQIE = "fanqie"  # 番茄小说
 
 class AccountStatusEnum(str, enum.Enum):
     REGISTERING = "registering"
@@ -24,7 +25,7 @@ class Account(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     platform = Column(Enum(PlatformEnum, values_callable=lambda x: [e.value for e in x]), nullable=False)
-    username = Column(String(100), unique=True, index=True)
+    username = Column(String(100), index=True)  # 移除 unique=True，使用联合唯一索引
     password = Column(String(255))
     status = Column(Enum(AccountStatusEnum, values_callable=lambda x: [e.value for e in x]), default=AccountStatusEnum.REGISTERING)
     health_score = Column(Float, default=100.0)
@@ -38,12 +39,201 @@ class Account(Base):
     session_token = Column(String(500))  # 会话令牌
     publish_url = Column(String(500))  # 发布页面 URL
     
+    # 番茄小说特有字段
+    novel_id = Column(String(100))  # 小说ID（每本书的唯一标识）
+    novel_title = Column(String(500))  # 小说标题
+    novel_status = Column(String(20))  # 小说状态：ongoing/completed/paused
+    writer_cookies = Column(Text)  # 作家专区Cookie
+    writer_token = Column(String(500))  # 作家认证Token
+    total_chapters = Column(Integer, default=0)  # 总章节数
+    total_words = Column(Integer, default=0)  # 总字数
+    total_readers = Column(Integer, default=0)  # 累计读者数
+    avg_completion_rate = Column(Float, default=0.0)  # 平均读完率
+    daily_income = Column(Float, default=0.0)  # 当日收益
+    monthly_income = Column(Float, default=0.0)  # 当月收益
+    total_income = Column(Float, default=0.0)  # 累计收益
+    consecutive_days = Column(Integer, default=0)  # 连续更新天数
+    last_update_date = Column(DateTime)  # 最后更新日期
+    qualification_for_bonus = Column(Boolean, default=False)  # 是否获得全勤奖资格
+    
+    # 头条账号特有字段
+    toutiao_last_publish_time = Column(DateTime)  # 最后发布时间
+    toutiao_consecutive_days = Column(Integer, default=0)  # 连续发文天数
+    toutiao_qualification_for_bonus = Column(Boolean, default=False)  # 收益资格
+    
+    # 自适应进化配置（JSON存储）
+    evolution_config = Column(JSON)  # 进化策略配置
+    last_evolution_time = Column(DateTime)  # 最后一次进化时间
+    
     # 关联关系
     nurturing_sessions = relationship("NurturingSession", back_populates="account", cascade="all, delete-orphan")
     health_metrics = relationship("AccountHealthMetrics", back_populates="account", uselist=False, cascade="all, delete-orphan")
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 联合唯一索引：同一平台下用户名唯一
+    __table_args__ = (
+        Index('ix_platform_username', 'platform', 'username', unique=True),
+    )
+
+
+class Novel(Base):
+    """小说基本信息表"""
+    __tablename__ = "novels"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), index=True)  # 关联账号
+    
+    # 基本信息
+    title = Column(String(500), nullable=False)  # 小说标题
+    subtitle = Column(String(500))  # 副标题/简介
+    category = Column(String(50))  # 分类：都市/玄幻/仙侠/历史等
+    tags = Column(JSON)  # 标签列表
+    
+    # 封面和介绍
+    cover_image_path = Column(String(500))  # 封面图路径
+    introduction = Column(Text)  # 小说简介
+    golden_three_chapters = Column(Text)  # 黄金三章内容（用于审核）
+    
+    # 状态管理
+    status = Column(String(20), default="draft")  # draft/published/ongoing/completed
+    publish_schedule = Column(JSON)  # 发布计划（定时发布配置）
+    
+    # 统计数据
+    total_chapters = Column(Integer, default=0)
+    total_words = Column(Integer, default=0)
+    total_reads = Column(Integer, default=0)
+    total_favorites = Column(Integer, default=0)
+    avg_rating = Column(Float, default=0.0)  # 平均评分
+    
+    # 进化配置（自适应优化）
+    evolution_config = Column(JSON)  # 内容进化策略
+    last_evolution_time = Column(DateTime)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联关系
+    account = relationship("Account", backref="novels")
+    chapters = relationship("Chapter", back_populates="novel", cascade="all, delete-orphan")
+
+
+class Chapter(Base):
+    """章节信息表"""
+    __tablename__ = "chapters"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    novel_id = Column(Integer, ForeignKey('novels.id'), index=True)
+    
+    # 章节信息
+    chapter_number = Column(Integer, nullable=False)  # 章节序号
+    title = Column(String(500), nullable=False)  # 章节标题
+    content = Column(Text, nullable=False)  # 章节内容
+    word_count = Column(Integer, default=0)  # 字数统计
+    
+    # 发布状态
+    status = Column(String(20), default="draft")  # draft/scheduled/published/failed
+    scheduled_time = Column(DateTime)  # 计划发布时间
+    published_time = Column(DateTime)  # 实际发布时间
+    platform_chapter_id = Column(String(100))  # 平台上的章节ID
+    
+    # 数据表现
+    read_count = Column(Integer, default=0)  # 阅读人数
+    completion_rate = Column(Float, default=0.0)  # 读完率
+    retention_rate = Column(Float, default=0.0)  # 留存率（有多少人继续读下一章）
+    
+    # AI辅助标记
+    ai_generated_ratio = Column(Float, default=0.0)  # AI生成比例（0-1）
+    manual_revision_notes = Column(Text)  # 人工修改备注
+    
+    error_message = Column(Text)  # 发布错误信息
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联关系
+    novel = relationship("Novel", back_populates="chapters")
+
+
+class FanqieAnalytics(Base):
+    """番茄小说数据分析表"""
+    __tablename__ = "fanqie_analytics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    novel_id = Column(Integer, ForeignKey('novels.id'), index=True)
+    chapter_id = Column(Integer, ForeignKey('chapters.id'), index=True, nullable=True)
+    
+    # 日期维度
+    stat_date = Column(DateTime, nullable=False, index=True)
+    
+    # 阅读数据
+    daily_reads = Column(Integer, default=0)  # 日阅读量
+    new_followers = Column(Integer, default=0)  # 新增关注
+    new_favorites = Column(Integer, default=0)  # 新增书架
+    comments_count = Column(Integer, default=0)  # 评论数
+    
+    # 收益数据
+    daily_ad_revenue = Column(Float, default=0.0)  # 广告收益
+    reading_minutes = Column(Integer, default=0)  # 总阅读时长（分钟）
+    avg_reading_time = Column(Float, default=0.0)  # 平均阅读时长
+    
+    # 质量指标
+    completion_rate = Column(Float, default=0.0)  # 读完率
+    retention_rate_day1 = Column(Float, default=0.0)  # 次日留存
+    retention_rate_day7 = Column(Float, default=0.0)  # 7日留存
+    
+    # 排名数据
+    category_rank = Column(Integer)  # 分类排名
+    overall_rank = Column(Integer)  # 总榜排名
+    rising_rank = Column(Integer)  # 上升榜排名
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    novel = relationship("Novel", backref="analytics")
+    chapter = relationship("Chapter", backref="analytics", uselist=False)
+
+
+class Article(Base):
+    """头条文章表"""
+    __tablename__ = "articles"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), index=True)
+    
+    # 基本信息
+    title = Column(String(500), nullable=False)
+    content = Column(Text)
+    category = Column(String(50))
+    tags = Column(JSON)
+    cover_image_path = Column(String(500))
+    
+    # 发布状态
+    status = Column(String(20), default='draft')  # draft/scheduled/published/failed
+    scheduled_publish_time = Column(DateTime)
+    published_time = Column(DateTime)
+    platform_article_id = Column(String(100))
+    
+    # 性能指标
+    views = Column(Integer, default=0)
+    likes = Column(Integer, default=0)
+    comments = Column(Integer, default=0)
+    shares = Column(Integer, default=0)
+    completion_rate = Column(Float, default=0.0)
+    
+    # A/B测试
+    ab_test_id = Column(String(100))
+    variant_id = Column(String(50))
+    
+    # 错误信息
+    error_message = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联关系
+    account = relationship("Account", backref="articles")
 
 class ContentTask(Base):
     """内容创作任务表"""

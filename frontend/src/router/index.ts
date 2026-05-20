@@ -43,6 +43,10 @@ import VideoProcessor from '../views/VideoProcessor.vue'
 import APIUsage from '../views/APIUsage.vue'
 // 文章数据分析
 import ArticleAnalytics from '../views/ArticleAnalytics.vue'
+// 番茄小说管理
+import FanqieManagement from '../views/FanqieManagement.vue'
+// 自主智能体监控
+import AutonomousAgentMonitor from '../views/AutonomousAgentMonitor.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -87,6 +91,9 @@ const routes = [
       { path: 'video-processor', component: VideoProcessor, meta: { title: '视频处理' } },
       { path: 'api-usage', component: APIUsage, meta: { title: 'API用量监控' } },
       { path: 'article-analytics', component: ArticleAnalytics, meta: { title: '文章数据分析' } },
+      { path: 'fanqie', component: FanqieManagement, meta: { title: '番茄小说管理' } },
+      // 自主智能体监控
+      { path: 'agent-monitor', component: AutonomousAgentMonitor, meta: { title: '自主智能体监控' } },
     ]
   }
 ]

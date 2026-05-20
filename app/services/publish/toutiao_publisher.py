@@ -100,6 +100,8 @@ class ToutiaoPublisher:
                 f'--user-data-dir="{abs_user_data_dir}"',  # 使用引号包裹路径
                 '--no-first-run',
                 '--no-default-browser-check',
+                '--start-maximized',  # ★★★ 关键修复：启动时最大化窗口 ★★★
+                '--window-size=1920,1080',  # ★★★ 设置窗口大小 ★★★
                 'about:blank',
             ]
             
@@ -184,6 +186,31 @@ class ToutiaoPublisher:
         logger.info("   📑 创建新的标签页...")
         self.page = await self.context.new_page()
         logger.info(f"   ✅ 新标签页已创建")
+        
+        # ★★★ 关键修复：CDP模式下也要注入反检测脚本 ★★★
+        logger.info("   🛡️  注入反检测脚本...")
+        await self.page.add_init_script("""
+            // 隐藏 webdriver
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            // 模拟真实的 Chrome 对象
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+            };
+            
+            // 隐藏 Playwright 特征
+            delete window.__playwright;
+            delete window.__pw_manual;
+            delete window.__pw_inspect;
+            
+            console.log('✅ 反检测脚本已注入');
+        """)
+        logger.info("   ✅ 反检测脚本已注入")
                 
         logger.info("✅ 已连接到真实Edge浏览器")
         logger.info(f"   当前URL: {self.page.url}")
@@ -617,30 +644,39 @@ class ToutiaoPublisher:
         enable_ab_test: bool = False,
         declaration_type: str = "ai",  # 新增参数：声明类型，"ai"=引用ai, "personal_opinion"=仅个人观点（已废弃，改用declarations）
         declarations: list = None,  # ✅ 新增参数：作品声明列表（多选）
-        article_images: list = None  # 新增参数：文章配图路径列表
+        article_images: list = None,  # 新增参数：文章配图路径列表
+        image_suggestions: list = None,  # 新增参数：智能图片位置建议
+        account_id: int = None  # 新增参数：账号ID（用于获取进化配置）
     ) -> Dict[str, Any]:
         """
         发布头条文章（支持高级封面图功能）
         
-        :param title: 文章标题
-        :param content: 文章内容
-        :param category: 文章分类
-        :param tags: 标签列表
-        :param cover_image_path: 封面图片路径（可选）
-        :param auto_generate_cover: 是否自动生成封面图
-        :param cover_style: AI生成风格 (modern/minimal/bold)
-        :param use_template: 使用的模板ID
-        :param enable_ab_test: 是否启用A/B测试
-        :param declaration_type: 声明类型
-        :param article_images: 文章配图路径列表（可选）
+        Args:
+            title: 文章标题
+            content: 文章内容
+            category: 文章分类
+            tags: 标签列表
+            cover_image_path: 自定义封面图路径
+            auto_generate_cover: 是否自动生成封面图
+            cover_style: 封面风格 (modern/minimal/bold)
+            use_template: 使用模板ID生成封面
+            enable_ab_test: 是否启用A/B测试
+            declaration_type: 声明类型（已废弃，改用declarations）
+            declarations: 作品声明列表（多选），如 ["ai_generated", "personal_opinion"]
+            article_images: 文章配图路径列表
+            image_suggestions: 智能图片位置建议
+            account_id: 账号ID（用于获取进化配置）
         """
+        # 保存account_id供后续使用
+        self.account_id = account_id
+        
         try:
             if not self.page:
                 await self.initialize_browser()
 
             # 1. 进入文章发布页
-            # ★★★ 尝试不同的URL ★★★
-            publish_url = "https://mp.toutiao.com/profile_v4/graphic/publish"
+            # ✅ 使用正确的头条文章发布URL（根据实际页面）
+            publish_url = "https://mp.toutiao.com/profile_v4/graphic/publish?from=toutiao_pc"
             logger.info(f"正在打开发布页面: {publish_url}")
             
             # ★★★ 智能跳转逻辑：先检查当前页面，避免导航冲突（参考 test_cdp_auto_publish.py）★★★
@@ -650,7 +686,9 @@ class ToutiaoPublisher:
             if "profile_v4/graphic/publish" not in current_url:
                 logger.info("   正在跳转到发布页面...")
                 try:
-                    await self.page.goto(publish_url, timeout=60000, wait_until='domcontentloaded')
+                    # ✅ 关键修复：使用 wait_until='networkidle' 确保页面完全加载
+                    await self.page.goto(publish_url, timeout=60000, wait_until='networkidle')
+                    logger.info("   ✅ 发布页面已加载（networkidle）")
                 except Exception as e:
                     # 如果跳转被中断（例如重定向），通常意味着已经在目标页面或正在跳转
                     if "interrupted" in str(e) or "navigation" in str(e).lower():
@@ -663,6 +701,197 @@ class ToutiaoPublisher:
             # 等待页面完全稳定
             logger.info("   等待页面完全加载...")
             await asyncio.sleep(10)
+            
+            # ★★★ 关键修复：额外等待微前端模块加载（针对CDP模式）★★★
+            if self._is_cdp_mode:
+                logger.info("   🧩 CDP模式：等待微前端模块加载...")
+                
+                # ✅ 关键修复：增加最大等待时间和重试次数
+                MAX_WAIT_TIME = 30  # 最多等待30秒
+                CHECK_INTERVAL = 1  # 每秒检查一次
+                
+                for i in range(MAX_WAIT_TIME):
+                    await asyncio.sleep(CHECK_INTERVAL)
+                    
+                    # 检查页面加载状态
+                    load_status = await self.page.evaluate("""
+                        () => {
+                            // 检查微前端容器是否存在
+                            const microAppContainer = document.querySelector('#micro-app-graphic, [id*="micro-app"], .garfish-container');
+                            
+                            // 检查编辑器是否真正可用
+                            const editor = document.querySelector('div[contenteditable="true"]');
+                            const isEditorReady = editor && editor.offsetParent !== null && editor.clientHeight > 0;
+                            
+                            // ★★★ 关键：检查底部固定栏是否出现（固定定位，不随滚动条滚动）★★★
+                            // ✅ 根据实际页面：预览、定时发布、预览并发布按钮是固定在底部的
+                            const bottomBarSelectors = [
+                                // 方法1：直接查找按钮文本（最可靠）
+                                'button:has-text("预览并发布")',
+                                'button:has-text("预览")',
+                                'button:has-text("定时发布")',
+                                'button:has-text("确认发布")',  // ✅ 新增：确认发布按钮
+                                
+                                // 方法2：底部栏容器
+                                '[class*="publish-bar"]',
+                                '[class*="bottom-bar"]',
+                                '[class*="footer-bar"]',
+                                
+                                // 方法3：包含多个按钮的容器
+                                'div[class*="action"]',
+                                'div[class*="toolbar-bottom"]'
+                            ];
+                            
+                            let bottomBarFound = false;
+                            let foundSelector = '';
+                            for (const selector of bottomBarSelectors) {
+                                try {
+                                    const elements = document.querySelectorAll(selector);
+                                    for (const element of elements) {
+                                        if (element && element.offsetParent !== null && element.clientHeight > 0) {
+                                            bottomBarFound = true;
+                                            foundSelector = selector;
+                                            console.log('✅ 找到底部栏:', selector);
+                                            break;
+                                        }
+                                    }
+                                    if (bottomBarFound) break;
+                                } catch(e) {
+                                    // 忽略选择器错误
+                                }
+                            }
+                            
+                            // 检查是否有"预览并发布"或"确认发布"按钮的文本（最可靠的检测方式）
+                            let hasPublishButton = false;
+                            let publishButtonText = '';
+                            const allButtons = document.querySelectorAll('button');
+                            for (const btn of allButtons) {
+                                const text = btn.textContent.trim();
+                                if (text.includes('预览并发布') || text.includes('确认发布')) {
+                                    hasPublishButton = true;
+                                    publishButtonText = text;
+                                    console.log('✅ 找到发布按钮:', text);
+                                    break;
+                                }
+                            }
+                            
+                            return {
+                                container: !!microAppContainer,
+                                editorReady: isEditorReady,
+                                bottomBarLoaded: bottomBarFound,
+                                hasPublishButton: hasPublishButton,
+                                foundSelector: foundSelector
+                            };
+                        }
+                    """)
+                    
+                    # 如果找到发布按钮，说明页面完全就绪（底部按钮是固定定位，不需要滚动）
+                    if load_status['hasPublishButton']:
+                        # ✅ 关键修复：只要有发布按钮就认为页面加载完成
+                        # 底部按钮是固定定位（position: fixed/sticky），页面加载后应该立即可见
+                        logger.info(f"   ✅ 页面完全加载！发布按钮已就绪（耗时{i+1}秒）")
+                        logger.info(f"      按钮文本: {load_status.get('publishButtonText', 'N/A')}")
+                        if load_status.get('foundSelector'):
+                            logger.info(f"      匹配选择器: {load_status.get('foundSelector')}")
+                        break
+                    
+                    # 如果编辑器已就绪但发布按钮未出现，继续等待
+                    if load_status['editorReady'] and i > 5:
+                        logger.info(f"   ⏳ 编辑器已就绪，等待发布按钮加载... ({i+1}/{MAX_WAIT_TIME}秒) [发布按钮:{load_status['hasPublishButton']}]")
+                    elif i % 5 == 0 and i > 0:
+                        logger.info(f"    等待页面加载... ({i+1}/{MAX_WAIT_TIME}秒) [编辑器:{load_status['editorReady']}, 发布按钮:{load_status['hasPublishButton']}]")
+                else:
+                    # 循环结束仍未找到发布按钮
+                    logger.warning("   ⚠️  页面可能未完全加载，发布按钮未出现")
+                    
+                    # ✅ 保存调试信息（HTML + 截图）
+                    try:
+                        import time
+                        timestamp = int(time.time())
+                        debug_html = f"logs/toutiao_incomplete_load_{timestamp}.html"
+                        with open(debug_html, 'w', encoding='utf-8') as f:
+                            f.write(await self.page.content())
+                        logger.info(f"📄 不完整加载的HTML已保存: {debug_html}")
+                        
+                        # 保存截图
+                        debug_screenshot = f"logs/toutiao_incomplete_load_{timestamp}.png"
+                        await self.page.screenshot(path=debug_screenshot, full_page=True)
+                        logger.info(f"📸 不完整加载的截图已保存: {debug_screenshot}")
+                    except Exception as e:
+                        logger.error(f"保存调试信息失败: {e}")
+                    
+                    # ★★★ 尝试触发发布按钮加载（底部按钮是固定定位，理论上不需要滚动）★★★
+                    logger.info("   ⚠️  底部按钮未出现，尝试触发页面完整渲染...")
+                    
+                    # 方法1：聚焦到标题输入框（可能触发页面完整渲染）
+                    await self.page.evaluate("""
+                        () => {
+                            const titleInput = document.querySelector('input[placeholder*="标题"]');
+                            if (titleInput) {
+                                titleInput.click();
+                                titleInput.focus();
+                                setTimeout(() => {
+                                    titleInput.blur();
+                                    // 触发input事件
+                                    titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                }, 500);
+                            }
+                        }
+                    """)
+                    await asyncio.sleep(3)
+                    
+                    # 方法2：聚焦到正文编辑器
+                    await self.page.evaluate("""
+                        () => {
+                            const editor = document.querySelector('div[contenteditable="true"]');
+                            if (editor) {
+                                editor.click();
+                                editor.focus();
+                                setTimeout(() => editor.blur(), 500);
+                            }
+                        }
+                    """)
+                    await asyncio.sleep(3)
+                    
+                    # 方法3：窗口resize事件（可能触发重新渲染）
+                    await self.page.evaluate("""
+                        () => {
+                            window.dispatchEvent(new Event('resize'));
+                        }
+                    """)
+                    await asyncio.sleep(2)
+                    
+                    logger.info("   ✅ 已尝试多种方法触发页面完整渲染")
+                    
+                    # 最终检测：直接查找按钮文本（最可靠）
+                    final_check = await self.page.evaluate("""
+                        () => {
+                            const buttons = document.querySelectorAll('button');
+                            for (const btn of buttons) {
+                                const text = btn.textContent.trim();
+                                if (text.includes('预览并发布')) {
+                                    return {
+                                        found: true,
+                                        text: text
+                                    };
+                                }
+                            }
+                            return {
+                                found: false,
+                                text: ''
+                            };
+                        }
+                    """)
+                    
+                    if final_check['found']:
+                        logger.info(f"   ✅ 触发后成功找到发布按钮！按钮文本: {final_check['text']}")
+                    else:
+                        logger.error("   ❌ 即使触发后仍未找到'预览并发布'按钮")
+                        logger.error("    可能原因：")
+                        logger.error("      1. 浏览器窗口未最大化，按钮被遮挡")
+                        logger.error("      2. 被头条反自动化检测拦截，页面未完整加载")
+                        logger.error("      3. 网络连接问题，微前端模块加载失败")
+                        logger.error("      4. 头条页面结构发生变化")
             
             # 再次检查URL
             final_url = self.page.url
@@ -740,13 +969,70 @@ class ToutiaoPublisher:
                     try:
                         from app.services.content.image_generator import ImageGenerator
                         from app.db.session import SessionLocal
+                        from app.models import Account
                         
                         # ★★★ 关键修复：传入数据库会话，让ImageGenerator能读取配置 ★★★
                         db = SessionLocal()
                         image_gen = ImageGenerator(db=db)
                         
-                        # ★★★ 优化提示词：生成更有吸引力的封面图 ★★★
-                        prompt = f"""{title}, {category}
+                        # ★★★ 获取账号的自适应进化配置（如果有）★★★
+                        evolution_config = None
+                        if self.account_id:
+                            account = db.query(Account).filter(Account.id == self.account_id).first()
+                            if account and account.evolution_config:
+                                import json
+                                evolution_config = json.loads(account.evolution_config)
+                                logger.info(f"✅ 检测到账号 {self.account_id} 的自适应进化配置")
+                        
+                        # ★★★ 根据进化配置优化提示词 ★★★
+                        cover_optimization = {}
+                        if evolution_config:
+                            cover_optimization = evolution_config.get("cover_optimization", {})
+                            style_recommendations = cover_optimization.get("style_recommendations", {})
+                            
+                            # 根据分类选择推荐的封面风格
+                            recommended_style = style_recommendations.get(category, {})
+                            if recommended_style:
+                                logger.info(f"🎨 应用自适应封面优化建议")
+                                logger.info(f"   推荐风格: {recommended_style.get('style', 'modern')}")
+                                logger.info(f"   配色方案: {recommended_style.get('color_scheme', '')}")
+                                logger.info(f"   构图方式: {recommended_style.get('composition', '')}")
+                                
+                                # 构建增强提示词
+                                prompt = f"""{title}, {category}
+
+专业级头条封面图设计，视觉冲击力强，引人注目：
+- 风格：{recommended_style.get('style', 'modern')}（{recommended_style.get('prompt_additions', '')}）
+- 色彩：{recommended_style.get('color_scheme', '蓝紫色渐变')}
+- 构图：{recommended_style.get('composition', '黄金分割构图')}
+- 质量：8K超高清，专业摄影质感
+- 元素：关键主题元素突出，留白适当，文字友好
+
+适合今日头条平台，吸引点击，高转化率"""
+                            else:
+                                # 降级：使用通用模板
+                                universal_template = cover_optimization.get("universal_prompt_template", "")
+                                if universal_template:
+                                    prompt = universal_template.format(
+                                        style="modern",
+                                        color_scheme="蓝色/紫色渐变",
+                                        composition="主体居中，简洁背景",
+                                        prompt_additions=f"{title}, {category}"
+                                    )
+                                else:
+                                    prompt = f"""{title}, {category}
+
+专业级头条封面图设计，视觉冲击力强，引人注目：
+- 构图：黄金分割构图，主体突出，层次分明
+- 色彩：鲜艳饱和，对比强烈，暖色调为主
+- 风格：现代简约，商业摄影质感，高清细节
+- 元素：关键主题元素居中，留白适当，文字友好
+- 质量：8K超高清，专业灯光，锐利清晰
+
+适合今日头条平台，吸引点击，高转化率"""
+                        else:
+                            # 没有进化配置，使用原始提示词
+                            prompt = f"""{title}, {category}
 
 专业级头条封面图设计，视觉冲击力强，引人注目：
 - 构图：黄金分割构图，主体突出，层次分明
@@ -958,7 +1244,18 @@ class ToutiaoPublisher:
             # 5. ★★★ [步骤5/6] 插入文章配图（分散插入到不同段落）★★★
             if article_images:
                 logger.info("\n=== [步骤5/6] 开始插入文章配图 ===")
-                await self._insert_article_images(article_images)
+                
+                # ★★★ 检查是否有智能图片位置建议 ★★★
+                if image_suggestions and len(image_suggestions) > 0:
+                    logger.info(f"📍 使用智能图片位置建议，共 {len(image_suggestions)} 个位置")
+                    positions = [sug["position"] for sug in image_suggestions]
+                    logger.info(f"   位置: {positions}")
+                    await self._insert_article_images_with_positions(article_images, positions)
+                else:
+                    # 降级：使用均匀分布
+                    logger.info("📍 使用均匀分布模式")
+                    await self._insert_article_images(article_images)
+                
                 logger.info("=== 文章配图插入完成 ===\n")
             
             # 6. ★★★ [步骤6/6] 设置作品声明（根据declarations参数）★★★
@@ -1115,66 +1412,179 @@ class ToutiaoPublisher:
 
             # ★★★ 检查是否有确认弹窗（自动点击）★★★
             try:
-                logger.info("   查找'确认发布'按钮...")
-                # ★★★ 关键修复：等待确认对话框出现（与测试脚本一致）★★★
-                await asyncio.sleep(3)
+                logger.info("   🔍 查找'确认发布'按钮...")
+                # ★★★ 关键修复：等待确认对话框出现（增加等待时间）★★★
+                await asyncio.sleep(5)  # 从3秒增加到5秒
                 
-                # ★★★ 自动点击确认发布按钮 ★★★
+                # ★★★ 调试：保存点击后的页面状态 ★★★
+                try:
+                    post_click_html = f"logs/toutiao_post_click_{int(asyncio.get_event_loop().time())}.html"
+                    with open(post_click_html, 'w', encoding='utf-8') as f:
+                        f.write(await self.page.content())
+                    logger.info(f"📄 点击后HTML已保存: {post_click_html}")
+                    
+                    post_click_screenshot = f"logs/toutiao_post_click_{int(asyncio.get_event_loop().time())}.png"
+                    await self.page.screenshot(path=post_click_screenshot, full_page=True)
+                    logger.info(f"📸 点击后截图: {post_click_screenshot}")
+                except Exception as e:
+                    logger.warning(f"保存点击后状态失败: {e}")
+                
+                # ★★★ 先尝试等待对话框出现（最多等待10秒）★★★
+                logger.info("   ⏳ 等待确认对话框出现...")
+                dialog_appeared = False
+                for i in range(10):
+                    await asyncio.sleep(1)
+                    has_dialog = await self.page.evaluate("""
+                        () => {
+                            const dialogs = document.querySelectorAll('.byte-modal, .modal, [role="dialog"], .ant-modal, .confirm-dialog');
+                            return dialogs.length > 0;
+                        }
+                    """)
+                    if has_dialog:
+                        logger.info(f"   ✅ 在第{i+1}秒检测到对话框")
+                        dialog_appeared = True
+                        break
+                    if i % 3 == 0 and i > 0:
+                        logger.info(f"   ⏳ 已等待{i}秒...")
+                
+                if not dialog_appeared:
+                    logger.warning("   ⚠️  10秒内未检测到对话框，可能不需要二次确认")
+                
+                # ★★★ 自动点击确认发布按钮（根据实际对话框结构优化）★★★
                 confirm_clicked = await self.page.evaluate("""
                     () => {
-                        // 查找所有包含"确认发布"文本的按钮
-                        const allButtons = document.querySelectorAll('button, [role="button"], .byte-btn');
+                        const results = {
+                            clicked: false,
+                            buttonText: '',
+                            foundButtons: [],
+                            method: ''
+                        };
                         
+                        // 方法1：优先在对话框/模态框中查找（根据截图结构）
+                        const dialogs = document.querySelectorAll('.byte-modal, .modal, [role="dialog"], .preview-modal, .confirm-dialog');
+                        for (const dialog of dialogs) {
+                            // 在对话框中查找底部按钮区域
+                            const footer = dialog.querySelector('.byte-modal-footer, .modal-footer, [class*="footer"], [class*="bottom"]');
+                            const buttons = footer ? footer.querySelectorAll('button, [role="button"], .byte-btn') : 
+                                                   dialog.querySelectorAll('button, [role="button"], .byte-btn');
+                            
+                            for (const btn of buttons) {
+                                const text = btn.textContent?.trim();
+                                if (text) {
+                                    results.foundButtons.push(text.substring(0, 20));
+                                }
+                                
+                                // ★★★ 精确匹配"确认发布"按钮（红色主按钮）★★★
+                                if (text === '确认发布') {
+                                    btn.click();
+                                    console.log('✅ 已点击确认发布按钮');
+                                    results.clicked = true;
+                                    results.buttonText = text;
+                                    results.method = '精确匹配对话框内的确认发布按钮';
+                                    return results;
+                                }
+                            }
+                        }
+                        
+                        // 方法2：在整个页面查找（如果对话框检测失败）
+                        const allButtons = document.querySelectorAll('button, [role="button"], .byte-btn');
                         for (const btn of allButtons) {
                             const text = btn.textContent?.trim();
                             if (text === '确认发布') {
                                 btn.click();
-                                console.log('已点击确认发布按钮');
-                                return true;
+                                console.log('✅ 已点击确认发布按钮');
+                                results.clicked = true;
+                                results.buttonText = text;
+                                results.method = '精确匹配页面中的确认发布按钮';
+                                return results;
                             }
                         }
                         
-                        // 如果没找到，尝试查找包含"确认"的按钮
+                        // 方法3：查找包含"确认"的按钮
                         for (const btn of allButtons) {
                             const text = btn.textContent?.trim();
-                            if (text.includes('确认')) {
+                            if (text && (text.includes('确认发布') || text === '确认')) {
                                 btn.click();
-                                console.log('已点击包含确认的按钮:', text);
-                                return true;
+                                console.log('✅ 已点击确认按钮:', text);
+                                results.clicked = true;
+                                results.buttonText = text;
+                                results.method = '模糊匹配确认按钮';
+                                return results;
                             }
                         }
                         
-                        // 最后尝试：查找模态框中的按钮
-                        const modals = document.querySelectorAll('.byte-modal, .modal, [role="dialog"], .confirm-dialog');
-                        for (const modal of modals) {
-                            const buttons = modal.querySelectorAll('button, [role="button"], .byte-btn');
-                            for (const btn of buttons) {
-                                const text = btn.textContent?.trim();
-                                if (text && (text.includes('确认') || text.includes('确定') || text === '发布')) {
-                                    btn.click();
-                                    return true;
-                                }
-                            }
+                        // 方法4：对话框中最后一个按钮（通常是确认按钮）
+                        for (const dialog of dialogs) {
+                            const buttons = dialog.querySelectorAll('button, [role="button"], .byte-btn');
                             if (buttons.length > 0) {
-                                buttons[buttons.length - 1].click();
-                                return true;
+                                // 最后一个按钮通常是确认/发布
+                                const lastButton = buttons[buttons.length - 1];
+                                const text = lastButton.textContent?.trim() || '未知按钮';
+                                lastButton.click();
+                                console.log('✅ 已点击对话框最后一个按钮:', text);
+                                results.clicked = true;
+                                results.buttonText = text;
+                                results.method = '点击对话框最后一个按钮';
+                                return results;
                             }
                         }
                         
-                        return false;
+                        return results;
                     }
                 """)
                 
-                if confirm_clicked:
-                    logger.info("✅ 已点击'确认发布'按钮")
-                    # ★★★ 关键修复：等待发布处理完成（与测试脚本一致）★★★
-                    logger.info("   ⏳ 等待发布处理完成（15秒）...")
-                    await asyncio.sleep(15)
+                # ★★★ 详细记录找到的按钮 ★★★
+                if isinstance(confirm_clicked, dict):
+                    if confirm_clicked.get('clicked'):
+                        logger.info(f"✅ 已点击按钮: {confirm_clicked.get('buttonText', '未知')}")
+                        logger.info(f"   匹配方式: {confirm_clicked.get('method', 'N/A')}")
+                    else:
+                        found_buttons = confirm_clicked.get('foundButtons', [])[:10]
+                        logger.warning(f"⚠️  未找到确认按钮")
+                        logger.warning(f"   页面上找到的按钮: {found_buttons}")
+                        
+                        # ★★★ 关键修复：尝试查找任何可见的对话框按钮 ★★★
+                        logger.info("   🔍 尝试查找对话框中的任何按钮...")
+                        any_button_clicked = await self.page.evaluate("""
+                            () => {
+                                // 查找所有模态框/对话框
+                                const dialogs = document.querySelectorAll('.byte-modal, .modal, [role="dialog"], .ant-modal, .confirm-dialog');
+                                if (dialogs.length === 0) {
+                                    console.log('未找到任何对话框');
+                                    return false;
+                                }
+                                
+                                // 在每个对话框中查找按钮
+                                for (const dialog of dialogs) {
+                                    const buttons = dialog.querySelectorAll('button, [role="button"], .byte-btn, .ant-btn');
+                                    if (buttons.length > 0) {
+                                        // 点击最后一个按钮（通常是确认按钮）
+                                        const lastButton = buttons[buttons.length - 1];
+                                        const text = lastButton.textContent?.trim() || '未知按钮';
+                                        console.log('点击对话框按钮:', text);
+                                        lastButton.click();
+                                        return true;
+                                    }
+                                }
+                                
+                                return false;
+                            }
+                        """)
+                        
+                        if any_button_clicked:
+                            logger.info("✅ 已点击对话框中的按钮")
+                        else:
+                            logger.warning("⚠️  未找到任何可点击的对话框按钮")
                 else:
-                    logger.info("⚠️  未找到确认按钮，可能不需要二次确认")
-                    # 即使没有二次确认，也等待一段时间让发布处理完成
-                    logger.info("   ⏳ 等待发布处理完成（15秒）...")
-                    await asyncio.sleep(15)
+                    # 兼容旧版本返回值（布尔值）
+                    if confirm_clicked:
+                        logger.info("✅ 已点击'确认发布'按钮")
+                    else:
+                        logger.warning("⚠️  未找到确认按钮")
+                
+                # ★★★ 关键修复：无论是否找到确认按钮，都等待足够时间 ★★★
+                logger.info("   ⏳ 等待发布处理完成（20秒）...")
+                await asyncio.sleep(20)
             except Exception as e:
                 logger.debug(f"未找到确认弹窗或已自动确认: {e}")
                 # 异常情况下也等待
@@ -1190,19 +1600,34 @@ class ToutiaoPublisher:
                 
                 logger.info(f"   📄 当前URL: {self.page.url}")
                 
-                # 在已发布列表中查找刚发布的文章
-                article_found = await self.page.evaluate(f"""
-                    () => {{
-                        const bodyText = document.body.textContent || '';
-                        const title = `{title}`;
-                        
-                        // 检查页面是否包含文章标题
-                        return bodyText.includes(title);
-                    }}
-                """)
+                # ★★★ 关键修复：多次尝试查找文章（最多3次，每次间隔3秒）★★★
+                article_found = False
+                for attempt in range(3):
+                    if attempt > 0:
+                        logger.info(f"   ⏳ 第{attempt + 1}次尝试查找文章...")
+                        await asyncio.sleep(3)
+                        # 刷新页面
+                        await self.page.reload(wait_until='domcontentloaded')
+                        await asyncio.sleep(3)
+                    
+                    # 在已发布列表中查找刚发布的文章
+                    article_found = await self.page.evaluate(f"""
+                        () => {{
+                            const bodyText = document.body.textContent || '';
+                            const title = `{title}`;
+                            
+                            // 检查页面是否包含文章标题
+                            return bodyText.includes(title);
+                        }}
+                    """)
+                    
+                    if article_found:
+                        logger.info(f"✅ 在已发布作品中找到文章: {title}")
+                        break
+                    else:
+                        logger.warning(f"   ⚠️  第{attempt + 1}次未找到文章")
                 
                 if article_found:
-                    logger.info(f"✅ 在已发布作品中找到文章: {title}")
                     logger.info("✅ 发布验证成功！")
                     
                     # 截图保存验证结果
@@ -1219,22 +1644,66 @@ class ToutiaoPublisher:
                         "message": "文章发布成功，已在已发布作品中验证"
                     }
                 else:
-                    logger.error(f"❌ 在已发布作品中未找到文章: {title}")
-                    logger.error("   发布失败！文章未在已发布列表中找到")
+                    # ★★★ 关键修复：未找到文章，继续检查草稿箱 ★★★
+                    logger.warning(f"⚠️  在已发布作品中未找到文章: {title}")
+                    logger.warning("   正在检查是否在草稿箱中...")
+                    
+                    # 跳转到草稿箱页面
+                    drafts_url = "https://mp.toutiao.com/profile_v4/graphic/drafts"
+                    await self.page.goto(drafts_url, timeout=30000, wait_until='domcontentloaded')
+                    await asyncio.sleep(5)
+                    
+                    # 在草稿箱中查找文章
+                    draft_found = False
+                    for attempt in range(2):
+                        if attempt > 0:
+                            await asyncio.sleep(2)
+                            await self.page.reload(wait_until='domcontentloaded')
+                            await asyncio.sleep(2)
+                        
+                        draft_found = await self.page.evaluate(f"""
+                            () => {{
+                                const bodyText = document.body.textContent || '';
+                                const title = `{title}`;
+                                return bodyText.includes(title);
+                            }}
+                        """)
+                        
+                        if draft_found:
+                            logger.info(f"✅ 在草稿箱中找到文章: {title}")
+                            break
                     
                     # 截图保存
                     try:
-                        verify_screenshot = f"logs/toutiao_publish_failed_{int(asyncio.get_event_loop().time())}.png"
+                        verify_screenshot = f"logs/toutiao_publish_check_{int(asyncio.get_event_loop().time())}.png"
                         await self.page.screenshot(path=verify_screenshot, full_page=True)
-                        logger.info(f"📸 失败截图: {verify_screenshot}")
+                        logger.info(f"📸 验证截图: {verify_screenshot}")
                     except:
                         pass
                     
-                    # ✅ 直接返回失败，不再执行后续判断
-                    return {
-                        "status": "failed",
-                        "error": "发布失败：文章未在已发布作品列表中找到。可能原因：文章被保存为草稿、审核未通过或发布过程出错"
-                    }
+                    if draft_found:
+                        logger.warning("⚠️  文章被保存为草稿，未正式发布")
+                        return {
+                            "status": "draft",
+                            "title": title,
+                            "message": "文章已保存为草稿，请在头条后台手动发布"
+                        }
+                    else:
+                        # ★★★ 关键修复：既不在已发布也不在草稿箱，判定为失败 ★★★
+                        logger.error(f"❌ 发布验证失败！")
+                        logger.error(f"   文章标题: {title}")
+                        logger.error(f"   已发布作品: 未找到")
+                        logger.error(f"   草稿箱: 未找到")
+                        logger.error(f"   可能原因:")
+                        logger.error(f"   1. 发布操作未成功执行")
+                        logger.error(f"   2. 文章被系统拦截或拒绝")
+                        logger.error(f"   3. 头条平台延迟（但超过30秒仍未显示）")
+                        logger.error(f"   请查看截图和日志，手动检查头条后台")
+                        
+                        return {
+                            "status": "failed",
+                            "error": f"发布验证失败：文章'{title}'既不在已发布作品也不在草稿箱中。请检查头条后台确认状态。"
+                        }
             except Exception as e:
                 logger.warning(f"⚠️  验证过程出错: {e}")
                 import traceback
@@ -1330,9 +1799,8 @@ class ToutiaoPublisher:
                 current_url = self.page.url
                 logger.info(f"当前URL: {current_url}")
                 
-                # 指标1: 是否有网络请求
-                # 指标2: URL是否变化
-                # 指标3: 是否仍在发布页面
+                # 指标1: URL是否变化
+                # 指标2: 是否仍在发布页面
                 
                 if "draft" in current_url or "edit" in current_url:
                     logger.warning("⚠️  仍在编辑页面，文章可能被保存为草稿")
@@ -1341,30 +1809,20 @@ class ToutiaoPublisher:
                         "title": title,
                         "message": "文章已保存为草稿，请在头条后台手动发布"
                     }
-                elif publish_request_detected and response_status == 200:
-                    # ★★★ 关键修复：优先信任网络请求的成功响应 ★★★
-                    logger.info("✅ 检测到成功的发布网络请求（状态码200），即使URL未变化也视为发布成功")
-                    logger.info("   头条可能采用异步发布机制，URL不一定立即跳转")
-                    return {
-                        "status": "success",
-                        "title": title,
-                        "message": "发布请求已成功发送，文章正在处理中。请在头条后台确认发布状态"
-                    }
                 elif "publish" in current_url and not url_changed:
-                    # 只有在没有成功网络请求的情况下，才判定为失败
-                    logger.warning("⚠️  仍停留在发布页面且URL未变化，也未检测到成功的网络请求")
-                    logger.warning(f"   - 网络请求: {'有' if publish_request_detected else '无'}")
-                    logger.warning(f"   - 响应状态: {response_status}")
-                    logger.warning(f"   - URL变化: {'是' if url_changed else '否'}")
+                    # 仍停留在发布页面
+                    logger.error("❌ 发布操作未完成，仍停留在发布页面")
+                    logger.error(f"   - URL变化: {'是' if url_changed else '否'}")
+                    logger.error(f"   - 当前URL: {current_url}")
                     return {
                         "status": "failed",
-                        "error": "发布操作未完成，仍停留在发布页面且未检测到成功的网络请求。请检查表单是否填写完整"
+                        "error": "发布操作未完成，仍停留在发布页面。请检查表单是否填写完整"
                     }
                 else:
-                    logger.warning("⚠️  无法确定发布状态")
-                    logger.warning(f"   - 网络请求: {'有' if publish_request_detected else '无'}")
-                    logger.warning(f"   - URL变化: {'是' if url_changed else '否'}")
-                    logger.warning(f"   - 响应状态: {response_status}")
+                    # URL已变化但无法确定状态
+                    logger.warning("⚠️  URL已变化，但未在已发布或草稿中找到文章")
+                    logger.warning(f"   - 当前URL: {current_url}")
+                    logger.warning(f"   请手动检查头条后台确认文章状态")
                     return {
                         "status": "pending",
                         "title": title,
@@ -1980,20 +2438,20 @@ class ToutiaoPublisher:
                                 img.style.display = 'block';
                                 img.style.margin = '10px auto';
                                 
-                                // 在目标段落后插入图片
+                                // 在目标段落后插入图片（使用正确的父节点）
                                 if (targetParagraph.nextSibling) {
-                                    editor.insertBefore(img, targetParagraph.nextSibling);
+                                    targetParagraph.parentNode.insertBefore(img, targetParagraph.nextSibling);
                                 } else {
-                                    editor.appendChild(img);
+                                    targetParagraph.parentNode.appendChild(img);
                                 }
                                 
                                 // 在图片后添加一个空段落，方便后续插入
                                 const emptyPara = document.createElement('p');
                                 emptyPara.innerHTML = '<br>';
                                 if (img.nextSibling) {
-                                    editor.insertBefore(emptyPara, img.nextSibling);
+                                    img.parentNode.insertBefore(emptyPara, img.nextSibling);
                                 } else {
-                                    editor.appendChild(emptyPara);
+                                    img.parentNode.appendChild(emptyPara);
                                 }
                                 
                                 return { success: true, message: '图片已插入' };
@@ -2104,6 +2562,192 @@ class ToutiaoPublisher:
             import traceback
             traceback.print_exc()
             raise  # ✅ 关键修复：抛出异常，让上层知道失败了
+    
+    async def _upload_image_to_toutiao(self, image_path: str) -> Optional[str]:
+        """
+        上传图片到头条服务器
+        :param image_path: 图片路径
+        :return: 上传后的图片URL，失败返回None
+        """
+        import os
+        
+        try:
+            logger.info(f"   📤 开始上传图片: {image_path}")
+            
+            # 转换为绝对路径
+            abs_img_path = os.path.abspath(image_path)
+            
+            if not os.path.exists(abs_img_path):
+                logger.error(f"   ❌ 图片文件不存在: {abs_img_path}")
+                return None
+            
+            # 点击编辑器的图片按钮（第12个工具栏按钮）
+            logger.info(f"   步骤1：点击编辑器图片按钮...")
+            
+            # 先关闭可能存在的对话框
+            await self.page.evaluate("""
+                () => {
+                    const event = new KeyboardEvent('keydown', {
+                        key: 'Escape',
+                        code: 'Escape',
+                        bubbles: true
+                    });
+                    document.dispatchEvent(event);
+                }
+            """)
+            await asyncio.sleep(1)
+            
+            # 查找并点击第12个工具栏按钮（图片按钮）
+            toolbar_buttons = await self.page.query_selector_all('.syl-toolbar-button')
+            logger.info(f"   找到 {len(toolbar_buttons)} 个工具栏按钮")
+            
+            if len(toolbar_buttons) <= 11:
+                logger.error(f"   ❌ 未找到足够的工具栏按钮（需要至少12个，实际{len(toolbar_buttons)}个）")
+                return None
+            
+            await toolbar_buttons[11].click()
+            logger.info(f"   ✅ 已点击第 12 个按钮（图片按钮）")
+            
+            # 等待对话框加载
+            await asyncio.sleep(3)
+            
+            # 点击"本地上传"按钮
+            logger.info(f"   步骤2：点击'本地上传'按钮...")
+            await self.page.evaluate("""
+                () => {
+                    const allElements = document.querySelectorAll('button, [role="button"], span, div');
+                    for (const el of allElements) {
+                        const text = (el.textContent || '').trim();
+                        const rect = el.getBoundingClientRect();
+                        if (text.includes('本地上传') && rect.width > 50 && rect.top > 0) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            """)
+            await asyncio.sleep(2)
+            logger.info(f"   ✅ 已点击'本地上传'按钮")
+            
+            # 上传文件
+            logger.info(f"   步骤3：上传文件...")
+            await asyncio.sleep(2)
+            
+            file_input = self.page.locator('input[type="file"]').first
+            await file_input.set_input_files(abs_img_path, timeout=10000)
+            logger.info(f"   ✅ 文件已上传")
+            
+            # 等待头条处理上传
+            logger.info(f"   步骤4：等待图片上传和处理(15秒)...")
+            await asyncio.sleep(15)
+            
+            # 获取已上传图片的URL
+            uploaded_img_url = await self.page.evaluate("""
+                () => {
+                    // 查找对话框中已上传的图片
+                    const dialogs = document.querySelectorAll('.upload-image-panel, .byte-modal, .byte-dialog, [role="dialog"]');
+                    for (const dialog of dialogs) {
+                        const imgs = dialog.querySelectorAll('img');
+                        if (imgs.length > 0) {
+                            // 返回最后一张图片的URL（最新上传的）
+                            return imgs[imgs.length - 1].src;
+                        }
+                    }
+                    return null;
+                }
+            """)
+            
+            if uploaded_img_url:
+                logger.info(f"   ✅ 图片上传成功，URL: {uploaded_img_url[:80]}...")
+            else:
+                logger.warning(f"   ⚠️  未获取到已上传图片URL")
+            
+            # 关闭对话框
+            logger.info(f"   步骤5：关闭对话框...")
+            await self.page.keyboard.press('Escape')
+            await asyncio.sleep(2)
+            logger.info(f"   ✅ 对话框已关闭")
+            
+            return uploaded_img_url
+            
+        except Exception as e:
+            logger.error(f"   ❌ 上传图片失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    async def _insert_article_images_with_positions(self, image_paths: list, positions: list):
+        """
+        根据指定位置插入文章配图（智能位置模式）
+        :param image_paths: 图片路径列表
+        :param positions: 图片插入位置列表（段落索引）
+        """
+        if not image_paths or not positions:
+            logger.warning("⚠️  没有图片或位置信息，跳过配图插入")
+            return
+        
+        try:
+            logger.info(f"🖼️ 开始插入 {len(image_paths)} 张配图到指定位置...")
+            
+            for idx, (img_path, position) in enumerate(zip(image_paths, positions), 1):
+                logger.info(f"\n步骤{idx}/{len(image_paths)}：上传配图 '{img_path}' 到第 {position + 1} 段落后...")
+                
+                # 上传图片到头条服务器
+                uploaded_img_url = await self._upload_image_to_toutiao(img_path)
+                if not uploaded_img_url:
+                    logger.error(f"❌ 第{idx}张图片上传失败，跳过")
+                    continue
+                
+                logger.info(f"✅ 图片已上传到头条服务器: {uploaded_img_url[:50]}...")
+                
+                # 使用JavaScript将图片插入到指定位置
+                insert_result = await self.page.evaluate("""
+                    (params) => {
+                        const { targetIndex, imgUrl } = params;
+                        const editor = document.querySelector('div[contenteditable="true"]');
+                        if (!editor) return { success: false, reason: '未找到编辑器' };
+                        
+                        const paragraphs = editor.querySelectorAll('p, div');
+                        if (targetIndex >= paragraphs.length) {
+                            return { success: false, reason: `目标索引${targetIndex}超出段落数${paragraphs.length}` };
+                        }
+                        
+                        const targetParagraph = paragraphs[targetIndex];
+                        
+                        // 创建图片元素
+                        const img = document.createElement('img');
+                        img.src = imgUrl;
+                        img.style.maxWidth = '100%';
+                        img.style.height = 'auto';
+                        img.style.display = 'block';
+                        img.style.margin = '10px auto';
+                        
+                        // 在目标段落后插入图片（使用正确的父节点）
+                        if (targetParagraph.nextSibling) {
+                            targetParagraph.parentNode.insertBefore(img, targetParagraph.nextSibling);
+                        } else {
+                            targetParagraph.parentNode.appendChild(img);
+                        }
+                        
+                        return { success: true };
+                    }
+                """, {"targetIndex": position, "imgUrl": uploaded_img_url})
+                
+                if insert_result.get("success"):
+                    logger.info(f"✅ 图片已成功插入到第 {position + 1} 段落后")
+                else:
+                    logger.error(f"❌ 插入配图失败: {insert_result.get('reason', '未知错误')}")
+                
+                await asyncio.sleep(2)
+            
+            logger.info(f"\n   ✅ 所有配图已处理")
+        
+        except Exception as e:
+            logger.error(f"   ❌ 插入配图失败：{e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     async def _set_declaration(self, declaration_type: str = "ai", declarations: list = None):
         """

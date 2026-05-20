@@ -911,12 +911,21 @@ class HotTrendInjector:
         """
         import asyncio
         try:
-            # 在事件循环中运行异步方法
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self.fetch_trending_topics(platform, count))
-            loop.close()
-            return result
+            # ✅ 修复：检查是否已在事件循环中，避免嵌套创建
+            try:
+                loop = asyncio.get_running_loop()
+                # 如果已有运行中的循环，直接在其中执行
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.fetch_trending_topics(platform, count))
+                    return future.result(timeout=30)
+            except RuntimeError:
+                # 没有运行中的循环，创建新循环
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(self.fetch_trending_topics(platform, count))
+                loop.close()
+                return result
         except Exception as e:
             logger.error(f"同步获取热搜失败: {str(e)}")
             # 返回空列表，不使用模拟数据

@@ -1,6 +1,9 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 from app.core.config import settings
+
+# 创建 Base 类
+Base = declarative_base()
 
 # 增加连接池配置，提高并发性能
 engine = create_engine(

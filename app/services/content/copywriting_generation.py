@@ -39,18 +39,32 @@ class CopywritingGenerator:
             self._initialize_from_settings()
     
     def _get_llm_config_from_db(self):
-        """从数据库获取LLM配置"""
+        """从数据库获取LLM配置(必须)"""
         if not self.db:
-            return None
+            raise ValueError("数据库会话未提供,无法获取LLM配置。请先在数据库中配置大模型。")
         
         try:
             from app.services.system.config_service import LLMConfigService
             llm_service = LLMConfigService(self.db)
             config = llm_service.get_default_llm_config("copywriting")
+            
+            if not config:
+                raise ValueError(
+                    "数据库中未找到文案生成的默认LLM配置。\n"
+                    "请前往【系统管理】→【LLM配置管理】添加配置:\n"
+                    "1. 选择提供商(siliconflow/modelscope/dashscope等)\n"
+                    "2. 功能类型选择【文案生成】\n"
+                    "3. 填写API密钥、Base URL和模型名称\n"
+                    "4. 勾选【设为默认】\n"
+                    "5. 保存并测试"
+                )
+            
             return config
+        except ValueError:
+            raise
         except Exception as e:
-            logger.warning(f"从数据库获取LLM配置失败: {e}，将使用配置文件")
-            return None
+            logger.error(f"从数据库获取LLM配置失败: {e}")
+            raise ValueError(f"数据库查询失败: {str(e)}")
     
     def _initialize_from_settings(self):
         """从配置文件初始化（回退方案）"""
@@ -203,7 +217,7 @@ class CopywritingGenerator:
         }
         return prompts.get(platform, prompts["douyin"])
 
-    def generate_script(self, platform: str, topic: str, max_retries: int = 2, enable_web_search: bool = True, optimized_prompt: Optional[str] = None) -> Optional[dict]:
+    def generate_script(self, platform: str, topic: str, max_retries: int = 2, enable_web_search: bool = True, optimized_prompt: Optional[str] = None, hot_article_content: Optional[str] = None, hot_article_title: Optional[str] = None, account_id: Optional[int] = None) -> Optional[dict]:
         """
         生成脚本内容
         
@@ -213,6 +227,9 @@ class CopywritingGenerator:
             max_retries: 最大重试次数
             enable_web_search: 是否启用网络搜索获取素材（默认True）
             optimized_prompt: 优化的提示词模板（来自智能分析结果）
+            hot_article_content: 热点文章原始内容（用于二次创作）
+            hot_article_title: 热点文章标题（用于二次创作）
+            account_id: 账号ID（用于获取自适应进化配置）
         """
         for attempt in range(max_retries + 1):
             try:
@@ -222,7 +239,7 @@ class CopywritingGenerator:
                     logger.info(f"🌐 开始搜索网络素材: {topic}")
                     try:
                         from app.services.content.web_search import get_web_search_service
-                        search_service = get_web_search_service()
+                        search_service = get_web_search_service(self.db)
                         
                         # 异步搜索（在同步函数中需要特殊处理）
                         import asyncio
@@ -242,6 +259,17 @@ class CopywritingGenerator:
                         if results:
                             web_materials = search_service.format_search_results_for_prompt(results)
                             logger.info(f"✅ 获取到 {len(results)} 条网络素材")
+                            
+                            # ★★★ 检查是否有二次创作内容 ★★★
+                            ai_rewrite_result = None
+                            for result in results:
+                                if result.get("is_generated") and result.get("source") == "ai_rewrite":
+                                    ai_rewrite_result = result
+                                    break
+                            
+                            if ai_rewrite_result:
+                                logger.info(f"🔄 检测到AI二次创作内容，将用于生成文章")
+                                # 这里可以使用 ai_rewrite_result['snippet'] 作为参考
                         else:
                             logger.warning("⚠️  未获取到网络素材，将仅使用LLM知识")
                     except Exception as e:
@@ -250,15 +278,162 @@ class CopywritingGenerator:
                 # === 步骤2: 构建增强Prompt ===
                 system_prompt = self._get_platform_prompt(platform, topic)
                 
+                # ★★★ 获取账号的自适应进化配置（如果有）★★★
+                evolution_config = None
+                if account_id:
+                    try:
+                        from app.models import Account
+                        from app.db.session import SessionLocal
+                        
+                        db = SessionLocal()
+                        account = db.query(Account).filter(Account.id == account_id).first()
+                        
+                        if account and account.evolution_config:
+                            import json
+                            evolution_config = json.loads(account.evolution_config)
+                            logger.info(f"✅ 检测到账号 {account_id} 的自适应进化配置")
+                            logger.info(f"   标题模式: {evolution_config.get('title_optimization', {}).get('recommended_pattern', 'N/A')}")
+                            logger.info(f"   封面风格: {len(evolution_config.get('cover_optimization', {}).get('style_recommendations', {}))}个分类")
+                        
+                        db.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️  获取进化配置失败: {e}")
+                
+                # 如果有进化配置，将其整合到提示词中
+                if evolution_config:
+                    title_optimization = evolution_config.get("title_optimization", {})
+                    content_optimization = evolution_config.get("content_optimization", {})
+                    
+                    evolution_guidance = f"""
+
+【🧬 自适应进化优化建议】
+基于您最近的历史数据分析，系统自动为您生成以下优化建议：
+
+📝 标题优化：
+- 推荐模式：{title_optimization.get('recommended_pattern', '')}
+- 成功案例：
+"""
+                    for i, example in enumerate(title_optimization.get('pattern_examples', [])[:3], 1):
+                        evolution_guidance += f"  {i}. {example}\n"
+                    
+                    evolution_guidance += f"""
+- 最佳长度：{int(title_optimization.get('optimal_length', 25))}字左右
+
+📖 内容结构优化：
+- 建议文章长度：{int(content_optimization.get('optimal_length', 2000))}字
+- 建议段落数量：{int(content_optimization.get('optimal_paragraphs', 8))}个
+- 结构建议：{content_optimization.get('structure_recommendation', '')}
+
+💡 请遵循以上优化建议进行创作，以提高文章的阅读量和互动率！
+"""
+                    
+                    system_prompt += evolution_guidance
+                    logger.info(f"✅ 已将自适应进化建议整合到提示词")
+                
+                # ★★★ 如果有热点文章内容，先进行二次创作 ★★★
+                if hot_article_content and hot_article_title:
+                    logger.info(f"🔄 检测到热点文章，启动二次创作模式")
+                    logger.info(f"   原标题: {hot_article_title}")
+                    logger.info(f"   原长度: {len(hot_article_content)}字")
+                    
+                    try:
+                        import asyncio
+                        from app.services.content.hot_article_rewriter import rewrite_hot_article
+                        
+                        # 异步执行二次创作
+                        try:
+                            loop = asyncio.get_running_loop()
+                            rewrite_result = asyncio.run_coroutine_threadsafe(
+                                rewrite_hot_article(
+                                    content=hot_article_content,
+                                    title=hot_article_title,
+                                    platform=platform,
+                                    depth="deep"
+                                ),
+                                loop
+                            ).result(timeout=30)
+                        except RuntimeError:
+                            rewrite_result = asyncio.run(
+                                rewrite_hot_article(
+                                    content=hot_article_content,
+                                    title=hot_article_title,
+                                    platform=platform,
+                                    depth="deep"
+                                )
+                            )
+                        
+                        if rewrite_result.get("status") == "success":
+                            logger.info(f"✅ 二次创作成功")
+                            logger.info(f"   新标题: {rewrite_result['new_title']}")
+                            logger.info(f"   原创度: {rewrite_result['originality_score']:.0%}")
+                            logger.info(f"   使用策略: {', '.join(rewrite_result['rewrite_strategies_used'])}")
+                            
+                            # 使用二次创作后的内容作为基础
+                            rewritten_content = rewrite_result['content']
+                            new_title = rewrite_result['new_title']
+                            
+                            # 将二次创作结果整合到提示词中
+                            user_message = f"""
+【二次创作参考】
+已对热点文章进行深度分析和二次原创：
+- 原标题: {hot_article_title}
+- 新标题建议: {new_title}
+- 原创度: {rewrite_result['originality_score']:.0%}
+- 改写策略: {', '.join(rewrite_result['rewrite_strategies_used'])}
+
+【二次创作后的内容框架】
+{rewritten_content[:1500]}
+
+【创作要求】
+请基于以上二次创作的内容框架，进一步完善和优化，生成最终的头条文章。
+注意：
+1. 保持高原创度，避免与原文雷同
+2. 加入更多个人观点和深度分析
+3. 确保内容结构清晰，段落分明
+4. 符合头条爆款文章的黄金规则
+5. 标题控制在30字以内
+
+主题：{topic}
+"""
+                            logger.info(f"✅ 已将二次创作内容整合到提示词")
+                        else:
+                            logger.warning(f"⚠️  二次创作失败: {rewrite_result.get('error')}")
+                            # 降级：使用普通流程
+                            user_message = f"请开始创作关于 {topic} 的内容"
+                            
+                    except Exception as e:
+                        logger.error(f"❌ 二次创作过程异常: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # 降级：使用普通流程
+                        user_message = f"请开始创作关于 {topic} 的内容"
+                
                 # 如果有优化的提示词，添加到system prompt中
-                if optimized_prompt:
+                elif optimized_prompt:
                     logger.info("🎯 应用智能分析优化后的提示词")
                     system_prompt = f"{system_prompt}\n\n{optimized_prompt}"
-                
-                # 如果有网络素材，添加到用户消息中
-                user_message = f"请开始创作关于 {topic} 的内容"
-                if web_materials:
-                    user_message = f"""
+                    
+                    # 如果有网络素材，添加到用户消息中
+                    user_message = f"请开始创作关于 {topic} 的内容"
+                    if web_materials:
+                        user_message = f"""
+{web_materials}
+
+【创作要求】
+请基于以上网络素材进行二次原创，注意：
+1. 不要直接复制素材内容，要进行深度加工和重新组织
+2. 结合素材中的最新信息和数据
+3. 加入你自己的观点和分析
+4. 保持原创性，避免抄袭嫌疑
+5. 确保内容准确性和时效性
+
+主题：{topic}
+"""
+                else:
+                    # 普通流程
+                    user_message = f"请开始创作关于 {topic} 的内容"
+                    if web_materials:
+                        user_message = f"""
 {web_materials}
 
 【创作要求】
@@ -322,6 +497,46 @@ class CopywritingGenerator:
                             tags_str = line.replace('#', '').replace('标签：', '').strip()
                             result["tags"] = [tag.strip() for tag in tags_str.split(',')]
                             logger.info(f"✅ 标签已提取: {result['tags']}")
+                    
+                    # ★★★ 新增：分析图片插入位置 ★★★
+                    image_suggestions = []
+                    try:
+                        from app.services.content.article_image_position_analyzer import suggest_image_positions
+                        image_suggestions = suggest_image_positions(
+                            content=content,
+                            title=result.get("title", topic),
+                            num_images=3
+                        )
+                        logger.info(f"✅ 图片位置分析完成，建议 {len(image_suggestions)} 个位置")
+                    except Exception as e:
+                        logger.warning(f"⚠️  图片位置分析失败: {e}，将使用默认均匀分布")
+                    
+                    # ★★★ 新增：智能内容优化建议 ★★★
+                    smart_optimization = {}
+                    try:
+                        from app.services.analytics.smart_content_optimizer import get_smart_optimization_suggestions
+                        
+                        historical_data = None  # TODO: 从数据库获取该账号的历史文章数据
+                        
+                        smart_optimization = get_smart_optimization_suggestions(
+                            content=content,
+                            title=result.get("title", topic),
+                            category=result.get("category", "科技"),
+                            historical_analytics=historical_data
+                        )
+                        
+                        logger.info(f"✅ 智能优化建议生成完成")
+                        if smart_optimization.get("title_optimization"):
+                            logger.info(f"   标题优化建议: {len(smart_optimization['title_optimization'].get('suggestions', []))}条")
+                        if smart_optimization.get("image_suggestions"):
+                            logger.info(f"   图片位置建议: {len(smart_optimization['image_suggestions'])}个")
+                            
+                    except Exception as e:
+                        logger.warning(f"⚠️  智能优化建议生成失败: {e}")
+                    
+                    # 添加智能优化字段到返回结果
+                    result["image_suggestions"] = image_suggestions
+                    result["smart_optimization"] = smart_optimization
                     
                     return result
                 else:

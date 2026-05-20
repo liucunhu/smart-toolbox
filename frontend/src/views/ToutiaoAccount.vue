@@ -352,6 +352,92 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 任务管理区域 -->
+    <el-row :gutter="20" style="margin-top: 20px;">
+      <el-col :span="24">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>⚙️ 头条任务管理</span>
+              <el-tag type="info" size="small">异步任务调度</el-tag>
+            </div>
+          </template>
+          
+          <el-row :gutter="20">
+            <!-- 健康检查 -->
+            <el-col :span="6">
+              <el-button 
+                type="primary" 
+                @click="checkHealth" 
+                :loading="checkingHealth"
+                style="width: 100%; height: 80px;"
+              >
+                <div style="font-size: 24px; margin-bottom: 5px;">🏥</div>
+                <div>账号健康检查</div>
+              </el-button>
+            </el-col>
+            
+            <!-- 收益统计 -->
+            <el-col :span="6">
+              <el-button 
+                type="success" 
+                @click="updateIncome" 
+                :loading="updatingIncome"
+                style="width: 100%; height: 80px;"
+              >
+                <div style="font-size: 24px; margin-bottom: 5px;">💰</div>
+                <div>更新收益统计</div>
+              </el-button>
+            </el-col>
+            
+            <!-- 热点监控 -->
+            <el-col :span="6">
+              <el-button 
+                type="warning" 
+                @click="monitorHotTopics" 
+                :loading="monitoringTopics"
+                style="width: 100%; height: 80px;"
+              >
+                <div style="font-size: 24px; margin-bottom: 5px;">🔥</div>
+                <div>监控热点话题</div>
+              </el-button>
+            </el-col>
+            
+            <!-- 数据抓取 -->
+            <el-col :span="6">
+              <el-button 
+                type="info" 
+                @click="fetchAnalytics" 
+                :loading="fetchingData"
+                style="width: 100%; height: 80px;"
+              >
+                <div style="font-size: 24px; margin-bottom: 5px;">📊</div>
+                <div>抓取数据分析</div>
+              </el-button>
+            </el-col>
+          </el-row>
+          
+          <el-divider />
+          
+          <el-alert
+            title="💡 提示"
+            type="info"
+            :closable="false"
+          >
+            <template #default>
+              <div style="font-size: 13px; line-height: 1.8;">
+                • <strong>账号健康检查</strong>：每小时自动运行，检测账号活跃度、内容质量、用户粘性等指标<br/>
+                • <strong>更新收益统计</strong>：每天自动更新，计算日收益、月收益、总收益<br/>
+                • <strong>监控热点话题</strong>：每2小时自动运行，追踪实时热点并生成选题建议<br/>
+                • <strong>抓取数据分析</strong>：手动触发，抓取最近7天的文章数据进行深度分析<br/>
+                • 所有任务均在后台异步执行，不会影响当前页面操作
+              </div>
+            </template>
+          </el-alert>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -418,6 +504,12 @@ const imagePreviews = ref<string[]>([])
 // 🌟 推荐主题相关
 const recommendedTopics = ref<any[]>([])
 const loadingTopics = ref(false)
+
+// ⚙️ 任务管理相关
+const checkingHealth = ref(false)
+const updatingIncome = ref(false)
+const monitoringTopics = ref(false)
+const fetchingData = ref(false)
 
 const isLoggedIn = computed(() => {
   return loginResult.value?.status === 'success'
@@ -589,9 +681,23 @@ const handleLogin = async () => {
  * 一键自动发布
  */
 const handleAutoPublish = async () => {
-  if (!publishForm.value.topic) {
-    ElMessage.warning('请输入文章主题')
-    return
+  // ✅ 允许留空主题，后端会自动推荐
+  // 如果用户确实需要提示，可以显示一个确认对话框
+  if (!publishForm.value.topic || publishForm.value.topic.trim() === '') {
+    try {
+      await ElMessageBox.confirm(
+        '您未输入主题，系统将自动根据热搜和历史数据推荐最可能火的主题，是否继续？',
+        '智能推荐主题',
+        {
+          confirmButtonText: '✅ 使用智能推荐',
+          cancelButtonText: '❌ 取消',
+          type: 'info'
+        }
+      )
+    } catch {
+      // 用户取消
+      return
+    }
   }
 
   // 检查是否已登录
@@ -796,6 +902,159 @@ const getConfidenceType = (confidence: number): 'success' | 'warning' | 'danger'
   if (confidence >= 0.8) return 'success'
   if (confidence >= 0.6) return 'warning'
   return 'danger'
+}
+
+// ==================== ⚙️ 任务管理方法 ====================
+
+/**
+ * 检查账号健康状态
+ */
+const checkHealth = async () => {
+  checkingHealth.value = true
+  try {
+    const response = await apiClient.post('/tasks/toutiao/check_health')
+    
+    if (response.data.status === 'success') {
+      ElMessage.success(`✅ 健康检查任务已提交，任务ID: ${response.data.task_id}`)
+      
+      // 显示详细信息
+      ElMessageBox.alert(
+        '健康检查任务已在后台运行，每小时自动执行一次。\n\n' +
+        '检查项目包括：\n' +
+        '• 账号活跃度（发文频率、连续性）\n' +
+        '• 内容质量（阅读量、完成率）\n' +
+        '• 用户粘性（互动率、留存率）\n' +
+        '• 合规安全（违规记录、风险等级）',
+        '健康检查说明',
+        {
+          confirmButtonText: '知道了',
+          type: 'info'
+        }
+      )
+    } else {
+      ElMessage.error('❌ 提交失败：' + response.data.message)
+    }
+  } catch (error: any) {
+    console.error('健康检查失败:', error)
+    ElMessage.error('❌ 提交失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    checkingHealth.value = false
+  }
+}
+
+/**
+ * 更新收益统计
+ */
+const updateIncome = async () => {
+  updatingIncome.value = true
+  try {
+    const response = await apiClient.post('/tasks/toutiao/update_income')
+    
+    if (response.data.status === 'success') {
+      ElMessage.success(`✅ 收益统计任务已提交，任务ID: ${response.data.task_id}`)
+      
+      ElMessageBox.alert(
+        '收益统计任务已在后台运行，每天自动更新一次。\n\n' +
+        '统计内容包括：\n' +
+        '• 日收益（基于最近7天数据）\n' +
+        '• 月收益（日收益 × 30）\n' +
+        '• 总收益（历史累计）\n' +
+        '• CPM估算（每千次展示收益）',
+        '收益统计说明',
+        {
+          confirmButtonText: '知道了',
+          type: 'success'
+        }
+      )
+    } else {
+      ElMessage.error('❌ 提交失败：' + response.data.message)
+    }
+  } catch (error: any) {
+    console.error('收益统计失败:', error)
+    ElMessage.error('❌ 提交失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    updatingIncome.value = false
+  }
+}
+
+/**
+ * 监控热点话题
+ */
+const monitorHotTopics = async () => {
+  monitoringTopics.value = true
+  try {
+    const response = await apiClient.post('/tasks/toutiao/monitor_hot_topics')
+    
+    if (response.data.status === 'success') {
+      ElMessage.success(`✅ 热点监控任务已提交，任务ID: ${response.data.task_id}`)
+      
+      ElMessageBox.alert(
+        '热点监控任务已在后台运行，每2小时自动执行一次。\n\n' +
+        '监控内容包括：\n' +
+        '• 实时热搜榜单\n' +
+        '• 热门话题趋势\n' +
+        '• 竞品分析\n' +
+        '• 智能选题推荐',
+        '热点监控说明',
+        {
+          confirmButtonText: '知道了',
+          type: 'warning'
+        }
+      )
+    } else {
+      ElMessage.error('❌ 提交失败：' + response.data.message)
+    }
+  } catch (error: any) {
+    console.error('热点监控失败:', error)
+    ElMessage.error('❌ 提交失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    monitoringTopics.value = false
+  }
+}
+
+/**
+ * 抓取数据分析
+ */
+const fetchAnalytics = async () => {
+  if (!currentAccountId.value) {
+    ElMessage.warning('⚠️ 请先登录账号')
+    return
+  }
+  
+  fetchingData.value = true
+  try {
+    const response = await apiClient.post('/tasks/toutiao/fetch_analytics', null, {
+      params: {
+        account_id: currentAccountId.value,
+        days: 7
+      }
+    })
+    
+    if (response.data.status === 'success') {
+      ElMessage.success(`✅ 数据抓取任务已提交，任务ID: ${response.data.task_id}`)
+      
+      ElMessageBox.alert(
+        `数据抓取任务已在后台运行。\n\n` +
+        `将抓取账号 ${currentAccountId.value} 最近7天的数据：\n` +
+        `• 文章阅读数据\n` +
+        `• 用户互动数据\n` +
+        `• 收益统计数据\n` +
+        `• 质量指标分析`,
+        '数据抓取说明',
+        {
+          confirmButtonText: '知道了',
+          type: 'info'
+        }
+      )
+    } else {
+      ElMessage.error('❌ 提交失败：' + response.data.message)
+    }
+  } catch (error: any) {
+    console.error('数据抓取失败:', error)
+    ElMessage.error('❌ 提交失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    fetchingData.value = false
+  }
 }
 </script>
 

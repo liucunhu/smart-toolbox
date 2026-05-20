@@ -1279,5 +1279,440 @@
         "engagement_score": 0.0
       }
     }
+  },
+  "article_img_f007601f": {
+    "test_id": "article_img_f007601f",
+    "article_title": "2026年AI已渗透生活这3个新应用90%的人不知道",
+    "description": "文章配图测试: 2026年AI已渗透生活这3个新应用90%的人不知道",
+    "created_at": "2026-05-12T14:20:28.051828",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_d022a86b.png",
+        "theme": "数据分析",
+        "style": "AI生成",
+        "description": "数据分析 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_af5ffbcf.png",
+        "theme": "可视化",
+        "style": "AI生成",
+        "description": "可视化 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_333bb049.png",
+        "theme": "数据挖掘",
+        "style": "AI生成",
+        "description": "数据挖掘 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_eac2833f": {
+    "test_id": "article_img_eac2833f",
+    "article_title": "390万就能买机甲？宇树科技这波操作让特斯拉慌了",
+    "description": "文章配图测试: 390万就能买机甲？宇树科技这波操作让特斯拉慌了",
+    "created_at": "2026-05-12T15:20:47.100615",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_5870564f.png",
+        "theme": "移动应用",
+        "style": "AI生成",
+        "description": "移动应用 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_1228813e.png",
+        "theme": "APP开发",
+        "style": "AI生成",
+        "description": "APP开发 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_200542c6.png",
+        "theme": "移动端优化",
+        "style": "AI生成",
+        "description": "移动端优化 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_bf41790a": {
+    "test_id": "article_img_bf41790a",
+    "article_title": "美国再打台湾牌，中国的回应让美方措手不及",
+    "description": "文章配图测试: 美国再打台湾牌，中国的回应让美方措手不及",
+    "created_at": "2026-05-12T16:40:20.622616",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_7304167a.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_d7412dd9.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_4e4ff5fc.png",
+        "theme": "智能未来",
+        "style": "AI生成",
+        "description": "智能未来 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_fe66ddb0": {
+    "test_id": "article_img_fe66ddb0",
+    "article_title": "中美摊牌时刻？台海红线谁碰谁疼",
+    "description": "文章配图测试: 中美摊牌时刻？台海红线谁碰谁疼",
+    "created_at": "2026-05-12T16:49:47.408590",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_9cd169e0.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_62fec143.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_eb891d51.png",
+        "theme": "智能未来",
+        "style": "AI生成",
+        "description": "智能未来 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_41db7b74": {
+    "test_id": "article_img_41db7b74",
+    "article_title": "4月销量前十仅剩一款油车，燃油车的末日到了吗？",
+    "description": "文章配图测试: 4月销量前十仅剩一款油车，燃油车的末日到了吗？",
+    "created_at": "2026-05-13T09:34:14.838074",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_e184ba10.png",
+        "theme": "数据分析",
+        "style": "AI生成",
+        "description": "数据分析 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_593ad374.png",
+        "theme": "可视化",
+        "style": "AI生成",
+        "description": "可视化 - AI生成风格"
+      },
+      {
+        "variant_id": "C",
+        "file_path": "output/images\\siliconflow_444f1535.png",
+        "theme": "数据挖掘",
+        "style": "AI生成",
+        "description": "数据挖掘 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "C": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_6eda77ce": {
+    "test_id": "article_img_6eda77ce",
+    "article_title": "特朗普访华带两大“神秘人物”，鲁比奥赫格塞思的真实意图...",
+    "description": "文章配图测试: 特朗普访华带两大“神秘人物”，鲁比奥赫格塞思的真实意图...",
+    "created_at": "2026-05-13T10:52:28.128029",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_8d870b7f.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_aa03d73a.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_1c3b126e": {
+    "test_id": "article_img_1c3b126e",
+    "article_title": "马刺狂胜森林狼27分，这3个细节暴露了西部最大黑马真相",
+    "description": "文章配图测试: 马刺狂胜森林狼27分，这3个细节暴露了西部最大黑马真相",
+    "created_at": "2026-05-13T11:33:20.754565",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_d7aa4ff5.png",
+        "theme": "数据分析",
+        "style": "AI生成",
+        "description": "数据分析 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_1f8fb995.png",
+        "theme": "可视化",
+        "style": "AI生成",
+        "description": "可视化 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_3003a74e": {
+    "test_id": "article_img_3003a74e",
+    "article_title": "中美经贸磋商重启，这3个信号决定未来走向",
+    "description": "文章配图测试: 中美经贸磋商重启，这3个信号决定未来走向",
+    "created_at": "2026-05-13T12:10:48.693000",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_0844b2ca.png",
+        "theme": "数据分析",
+        "style": "AI生成",
+        "description": "数据分析 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_1ef5cad7.png",
+        "theme": "可视化",
+        "style": "AI生成",
+        "description": "可视化 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_9d6bc934": {
+    "test_id": "article_img_9d6bc934",
+    "article_title": "中美经贸磋商重启，这3个细节透露关键信号",
+    "description": "文章配图测试: 中美经贸磋商重启，这3个细节透露关键信号",
+    "created_at": "2026-05-13T12:41:20.594729",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_61ea01bf.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_0c13fce1.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
+  },
+  "article_img_18cade56": {
+    "test_id": "article_img_18cade56",
+    "article_title": "特朗普突然示好，这次会晤能否打破中美僵局？",
+    "description": "文章配图测试: 特朗普突然示好，这次会晤能否打破中美僵局？",
+    "created_at": "2026-05-13T15:49:53.013431",
+    "status": "active",
+    "variants": [
+      {
+        "variant_id": "A",
+        "file_path": "output/images\\siliconflow_329d6593.png",
+        "theme": "科技创新",
+        "style": "AI生成",
+        "description": "科技创新 - AI生成风格"
+      },
+      {
+        "variant_id": "B",
+        "file_path": "output/images\\siliconflow_f2a8b059.png",
+        "theme": "数字化时代",
+        "style": "AI生成",
+        "description": "数字化时代 - AI生成风格"
+      }
+    ],
+    "metrics": {
+      "A": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      },
+      "B": {
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "engagement_score": 0.0
+      }
+    }
   }
 }

@@ -38,63 +38,65 @@ class ImageGenerator:
         self.default_provider = self._get_default_provider()
     
     def _get_default_provider(self) -> str:
-        """获取默认图像生成提供商"""
+        """获取默认图像生成提供商(必须从数据库)"""
         if not self.db:
-            return "modelscope"
+            raise ValueError("数据库会话未提供,无法获取图像生成配置。请先在数据库中配置大模型。")
         
         try:
             from app.services.system.config_service import LLMConfigService
             llm_service = LLMConfigService(self.db)
             config = llm_service.get_default_llm_config("image_generation")
             
-            if config:
-                logger.info(f"✅ 使用数据库配置的图像提供商: {config.provider.value}")
-                return config.provider.value
+            if not config:
+                raise ValueError(
+                    "数据库中未找到图像生成的默认LLM配置。\n"
+                    "请前往【系统管理】→【LLM配置管理】添加配置:\n"
+                    "1. 选择提供商(siliconflow/modelscope/dashscope等)\n"
+                    "2. 功能类型选择【图像生成】\n"
+                    "3. 填写API密钥、Base URL和模型名称\n"
+                    "4. 勾选【设为默认】\n"
+                    "5. 保存并测试"
+                )
+            
+            logger.info(f"✅ 使用数据库配置的图像提供商: {config.provider.value}")
+            return config.provider.value
+        except ValueError:
+            raise
         except Exception as e:
-            logger.warning(f"从数据库获取图像配置失败: {e}")
-        
-        return "modelscope"
+            logger.error(f"从数据库获取图像配置失败: {e}")
+            raise ValueError(f"数据库查询失败: {str(e)}")
     
     def _get_image_config(self, provider: str):
         """
-        从数据库或配置文件获取图像生成配置
+        从数据库获取图像生成配置(强制)
         
         Returns:
             (api_key, base_url, image_model)
         """
-        # 尝试从数据库获取
-        if self.db:
-            try:
-                from app.services.system.config_service import LLMConfigService
-                llm_service = LLMConfigService(self.db)
-                config = llm_service.get_llm_config(provider, "image_generation", is_default=True)
-                
-                if config:
-                    return config.api_key, config.base_url, config.image_model_name or config.model_name
-            except Exception as e:
-                logger.warning(f"从数据库获取{provider}配置失败: {e}")
+        if not self.db:
+            raise ValueError(f"数据库会话未提供,无法获取{provider}的图像生成配置")
         
-        # 回退到配置文件
-        if provider == "siliconflow":
-            return (
-                getattr(settings, 'SILICONFLOW_API_KEY', ''),
-                settings.SILICONFLOW_BASE_URL,
-                'Tongyi-MAI/Z-Image-Turbo'
-            )
-        elif provider == "dashscope":
-            return (
-                getattr(settings, 'DASHSCOPE_API_KEY', ''),
-                settings.DASHSCOPE_BASE_URL,
-                'wanx2.1-t2i-turbo'
-            )
-        elif provider == "modelscope":
-            return (
-                getattr(settings, 'MODELSCOPE_API_KEY', ''),
-                settings.MODELSCOPE_BASE_URL,
-                'black-forest-labs/FLUX.1-schnell'
-            )
-        
-        return '', '', ''
+        try:
+            from app.services.system.config_service import LLMConfigService
+            llm_service = LLMConfigService(self.db)
+            config = llm_service.get_llm_config(provider, "image_generation", is_default=True)
+            
+            if not config:
+                raise ValueError(
+                    f"数据库中未找到{provider}的图像生成配置。\n"
+                    f"请前往【系统管理】→【LLM配置管理】添加配置:\n"
+                    f"1. 提供商选择【{provider}】\n"
+                    f"2. 功能类型选择【图像生成】\n"
+                    f"3. 填写API密钥、Base URL和模型名称\n"
+                    f"4. 保存并测试"
+                )
+            
+            return config.api_key, config.base_url, config.image_model_name or config.model_name
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"从数据库获取{provider}配置失败: {e}")
+            raise ValueError(f"数据库查询失败: {str(e)}")
     
     async def generate_image(
         self,
