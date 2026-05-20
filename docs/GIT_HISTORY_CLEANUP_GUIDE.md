@@ -30,11 +30,11 @@ Copy-Item -Path . -Destination ..\smart-toolbox-backup -Recurse
 ### 3. 确认要清理的内容
 
 本次需要清理的敏感信息：
-- ❌ DashScope API Key: `sk-e28ba64c17ae4321a7d00620264e0a68`
-- ❌ SiliconFlow API Key: `sk-fqwnoraqwzkwoppbvtrgyyvbpiserarsxyrsdvrwixjzfafx`
-- ❌ MySQL 密码: `ToolboxPass123`
-- ❌ Redis 密码: `RedisPass123`
-- ❌ 头条密码: `Hspc@2024`
+- ❌ DashScope API Key: `sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+- ❌ SiliconFlow API Key: `sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+- ❌ MySQL 密码: `YourDBPassword`
+- ❌ Redis 密码: `YourRedisPassword`
+- ❌ 头条密码: `YourToutiaoPassword`
 
 ---
 
@@ -61,11 +61,11 @@ choco install bfg-repo-cleaner
 
 已创建 `passwords.txt`，内容如下：
 ```
-sk-e28ba64c17ae4321a7d00620264e0a68==>REMOVED_DASHSCOPE_KEY
-sk-fqwnoraqwzkwoppbvtrgyyvbpiserarsxyrsdvrwixjzfafx==>REMOVED_SILICONFLOW_KEY
-ToolboxPass123==>REMOVED_DB_PASSWORD
-RedisPass123==>REMOVED_REDIS_PASSWORD
-Hspc@2024==>REMOVED_TOUTIAO_PASSWORD
+sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx==>REMOVED_DASHSCOPE_KEY
+sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx==>REMOVED_SILICONFLOW_KEY
+YourDBPassword==>REMOVED_DB_PASSWORD
+YourRedisPassword==>REMOVED_REDIS_PASSWORD
+YourToutiaoPassword==>REMOVED_TOUTIAO_PASSWORD
 ```
 
 #### 3. 克隆镜像仓库
@@ -188,7 +188,7 @@ git push -u origin master --force
 git log -p --all | Select-String "sk-[a-z0-9]{20,}"
 
 # 搜索密码
-git log -p --all | Select-String "ToolboxPass123|RedisPass123|Hspc@2024"
+git log -p --all | Select-String "YourDBPassword|YourRedisPassword|YourToutiaoPassword"
 
 # 搜索特定文件
 git log --all --full-history -- "**/test_dashscope_pro.py"
