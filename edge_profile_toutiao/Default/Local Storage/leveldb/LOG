@@ -1,7 +1,0 @@
-2026/05/18-15:17:28.940 2498 Reusing MANIFEST D:\code\smart-toolbox\edge_profile_toutiao\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/18-15:17:28.945 2498 Recovering log #154
-2026/05/18-15:17:28.947 2498 Level-0 table #158: started
-2026/05/18-15:17:28.976 2498 Level-0 table #158: 21643 bytes OK
-2026/05/18-15:17:28.977 2498 Recovering log #157
-2026/05/18-15:17:28.997 2498 Reusing old log D:\code\smart-toolbox\edge_profile_toutiao\Default\Local Storage\leveldb/000157.log 
-2026/05/18-15:17:29.000 2498 Delete type=0 #154

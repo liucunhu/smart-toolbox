@@ -1,5 +1,0 @@
-2026/05/03-18:08:42.096 6dc4 Creating DB D:\code\smart-toolbox\edge_profile\Default\Local Storage\leveldb since it was missing.
-2026/05/03-18:08:42.288 6dc4 Reusing MANIFEST D:\code\smart-toolbox\edge_profile\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/03-18:09:21.191 6dc4 Level-0 table #5: started
-2026/05/03-18:09:21.223 6dc4 Level-0 table #5: 38586 bytes OK
-2026/05/03-18:09:21.232 6dc4 Delete type=0 #3

@@ -1,4 +1,0 @@
-2026/05/03-18:14:15.515 9fc0 Creating DB D:\code\smart-toolbox\edge_profile\Default\Site Characteristics Database since it was missing.
-2026/05/03-18:14:15.549 9fc0 Reusing MANIFEST D:\code\smart-toolbox\edge_profile\Default\Site Characteristics Database/MANIFEST-000001
-2026/05/03-18:14:15.551 9fc0 Recovering log #3
-2026/05/03-18:14:15.552 9fc0 Reusing old log D:\code\smart-toolbox\edge_profile\Default\Site Characteristics Database/000003.log 
