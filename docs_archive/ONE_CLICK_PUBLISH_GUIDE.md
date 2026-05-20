@@ -29,7 +29,7 @@
 ```bash
 # 当前配置（已启用）
 LLM_PROVIDER=siliconflow
-SILICONFLOW_API_KEY=sk-fqwnoraqwzkwoppbvtrgyyvbpiserarsxyrsdvrwixjzfafx
+SILICONFLOW_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  # 请替换为你的真实API Key
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 ```

@@ -1,25 +1,27 @@
 [project]
 name = "smart-toolbox"
-version = "1.0.1"
+version = "1.0.2"
 description = "自媒体智能运营工具箱 - AI驱动的账号管理、内容创作和分发平台"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi==0.109.0",
-    "uvicorn[standard]==0.27.0",
-    "sqlalchemy==2.0.25",
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "sqlalchemy==2.0.36",
     "pymysql==1.1.0",
-    "pydantic==2.5.3",
-    "pydantic-settings==2.1.0",
-    "celery==5.3.6",
-    "redis==5.0.1",
-    "playwright==1.40.0",
-    "openai==1.12.0",
-    "python-dotenv==1.0.0",
-    "loguru==0.7.2",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.7.0",
+    "celery==5.4.0",
+    "redis==5.2.1",
+    "playwright==1.49.1",
+    "paddleocr==2.8.1",
+    "paddlepaddle>=3.0.0",
+    "openai==1.58.1",
+    "python-dotenv==1.0.1",
+    "loguru==0.7.3",
     "passlib==1.7.4",
-    "bcrypt==4.1.2",
+    "bcrypt==4.2.1",
     "python-jose[cryptography]==3.3.0",
-    "tenacity==8.2.3",
+    "tenacity==9.0.0",
     "nest-asyncio==1.6.0",
 ]
 
