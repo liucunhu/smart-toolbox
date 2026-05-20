@@ -15,4 +15,4 @@ playwright==1.49.1
 opencv-python-headless==4.10.0.84
 ffmpeg-python==0.2.0
 numpy==1.26.4
-eventlet==0.38.2
+eventlet==0.40.3
