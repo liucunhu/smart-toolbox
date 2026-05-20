@@ -121,4 +121,16 @@ dump.rdb
 # Temporary files
 *.tmp
 *.temp
+temp_*.txt
+*_temp_*.log
 .cache/
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Browser profiles
+edge_profile*/
+
+# Smart Toolbox database
+smart_toolbox.db
