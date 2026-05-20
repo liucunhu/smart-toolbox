@@ -28,7 +28,7 @@ ffmpeg-python==0.2.0
 openai==1.58.1
 
 # Utilities
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 loguru==0.7.3
 tenacity==9.0.0
 nest-asyncio==1.6.0
